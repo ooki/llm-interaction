@@ -16,20 +16,42 @@ from llm_interaction import LLMInteraction, tool, ToolContext
 
 llm = LLMInteraction(prompt_dir=Path("prompts"))
 
-# Simple query
 result = await llm.query(system="Be helpful", user="Hello")
 print(result.text)
+```
 
-# Parse as JSON
+## Output Parsing
+
+Every `query()` returns an `LLMResponse`. Parsing is lazy — call the method you need:
+
+```python
+# Raw text
+result.text
+
+# JSON (extracts last ```json block, falls back to json_repair)
 data = result.json()
 
-# Parse as Pydantic model (with auto-retry on validation failure)
+# YAML
+data = result.yaml()
+
+# Scratchpad + JSON: splits reasoning text from structured data
+scratchpad, data = result.scratchpad_json()
+# scratchpad = "Let me analyze this step by step..."
+# data = {"topics": ["ai", "ml"]}
+
+# Scratchpad + YAML
+scratchpad, data = result.scratchpad_yaml()
+
+# Pydantic model (validates + auto-retries on failure)
 from pydantic import BaseModel
 
-class Topics(BaseModel):
+class Analysis(BaseModel):
     topics: list[str]
+    confidence: float
 
-topics = await result.parse(Topics)
+analysis = await result.parse(Analysis)
+# On validation error, re-queries the LLM with the error message
+# using previous_response_id for efficient context chaining
 ```
 
 ## Tool Calling
@@ -57,18 +79,83 @@ result = await llm.agent_loop(
 )
 ```
 
+## Jinja Templates
+
+Templates use the naming convention `{name}_system.jinja` and `{name}_user.jinja`:
+
+```python
+# prompts/research_system.jinja
+You are a {{ role }} assistant.
+
+# prompts/research_user.jinja
+Find information about {{ topic }}.
+```
+
+```python
+result = await llm.query_template(
+    prompt_name="research",
+    variables={"role": "research", "topic": "quantum computing"},
+)
+```
+
 ## Context Injection
 
 ```python
+class WeatherAPI:
+    def get(self, city: str) -> dict:
+        return {"city": city, "temp_c": 22, "condition": "sunny"}
+
 @tool
-def sample(ctx: ToolContext[DocumentSampler], n: int) -> list[dict]:
-    """Sample documents from the database."""
-    return ctx.sample(n)
+def get_weather(ctx: ToolContext[WeatherAPI], city: str) -> dict:
+    """Get current weather for a city.
+
+    Args:
+        city: City name to look up
+    """
+    return ctx.get(city)
+
+weather_api = WeatherAPI()
 
 result = await llm.agent_loop(
-    system="...", user="...",
-    tools=[sample],
-    context=[my_sampler],  # matched by type
+    system="You are a helpful assistant with weather access.",
+    user="What's the weather in Oslo?",
+    tools=[get_weather],
+    context=[weather_api],  # matched by type to ToolContext[WeatherAPI]
+)
+```
+
+A single tool can use multiple contexts, each matched by type:
+
+```python
+class WeatherAPI:
+    def get(self, city: str) -> dict:
+        return {"city": city, "temp_c": 22, "condition": "sunny"}
+
+class UserPreferences:
+    def __init__(self, unit: str = "celsius"):
+        self.unit = unit
+
+@tool
+def get_weather(
+    weather: ToolContext[WeatherAPI],
+    prefs: ToolContext[UserPreferences],
+    city: str,
+) -> str:
+    """Get weather for a city in the user's preferred unit.
+
+    Args:
+        city: City name to look up
+    """
+    data = weather.get(city)
+    if prefs.unit == "fahrenheit":
+        data["temp_f"] = data["temp_c"] * 9 / 5 + 32
+    return data
+
+result = await llm.agent_loop(
+    system="You are a weather assistant.",
+    user="What's the weather in Oslo?",
+    tools=[get_weather],
+    context=[WeatherAPI(), UserPreferences(unit="fahrenheit")],
 )
 ```
 

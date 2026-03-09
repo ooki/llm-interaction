@@ -9,6 +9,9 @@ description = "Async Azure OpenAI client with typed tool calling and lazy output
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
+authors = [
+    { name = "Sondre 'Ooki' Glimsdal", email = "sondre.glimsdal@gmail.com" },
+]
 dependencies = [
     "openai>=1.0",
     "jinja2>=3.0",
