@@ -2,9 +2,10 @@
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+
 [project]
 name = "llm-interaction"
-version = "0.1.0"
+version = "0.1.1"
 description = "Async Azure OpenAI client with typed tool calling and lazy output parsing"
 readme = "README.md"
 license = "MIT"
@@ -20,6 +21,10 @@ dependencies = [
     "python-dotenv>=1.0",
     "pydantic>=2.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/ooki/llm-interaction"
+Repository = "https://github.com/ooki/llm-interaction"
 
 [project.optional-dependencies]
 dev = [
