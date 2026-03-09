@@ -12,10 +12,17 @@ class TestLLMInteractionInit:
     def test_init(self, llm):
         assert llm.model == "gpt-4o"
 
+    def test_init_missing_model_raises(self, tmp_path):
+        with patch("llm_interaction.client.load_dotenv"):
+            with patch.dict("os.environ", {}, clear=True):
+                with pytest.raises(ValueError, match="Model required"):
+                    LLMInteraction(prompt_dir=tmp_path)
+
     def test_init_missing_key_raises(self, tmp_path):
-        with patch.dict("os.environ", {}, clear=True):
-            with pytest.raises(ValueError, match="API key"):
-                LLMInteraction(prompt_dir=tmp_path)
+        with patch("llm_interaction.client.load_dotenv"):
+            with patch.dict("os.environ", {"LLM_INTERACTION_MODEL": "m"}, clear=True):
+                with pytest.raises(ValueError, match="API key"):
+                    LLMInteraction(prompt_dir=tmp_path)
 
     def test_render(self, llm):
         result = llm.render("test_system.jinja", {"topic": "AI"})

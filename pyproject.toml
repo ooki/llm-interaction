@@ -5,8 +5,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "llm-interaction"
-version = "0.1.1"
-description = "Async Azure OpenAI client with typed tool calling and lazy output parsing"
+version = "0.1.2"
+description = "Async OpenAI Responses API client with typed tool calling, lazy output parsing, and Azure/Databricks backends"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
@@ -27,6 +27,9 @@ Homepage = "https://github.com/ooki/llm-interaction"
 Repository = "https://github.com/ooki/llm-interaction"
 
 [project.optional-dependencies]
+databricks = [
+    "databricks-sdk>=0.20",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",

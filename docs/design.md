@@ -1,6 +1,6 @@
 # Design
 
-`llm-interaction` is an async Azure OpenAI Responses API client with typed tool calling and lazy output parsing.
+`llm-interaction` is an async OpenAI Responses API client with typed tool calling, lazy output parsing, and Azure/Databricks backends.
 
 ## Architecture
 
@@ -12,14 +12,15 @@ The library is split into focused modules:
 | `_schema.py` | Python type → JSON Schema conversion, Google-style docstring parsing |
 | `parsing.py` | JSON/YAML parsing, fenced block extraction, scratchpad splitting, response output extraction |
 | `response.py` | `LLMResponse` (lazy parsing), `AgentResult` |
-| `client.py` | `LLMInteraction` class, context matching, API retry logic |
+| `client.py` | `LLMInteraction` class, context matching, API retry logic, Azure/Databricks backends |
 | `__init__.py` | Public API re-exports |
 
-Provider-specific logic is isolated in `client.py` behind clear method boundaries:
-- `_call_api()` — makes the API call
-- `_extract_text_from_output()` / `_extract_function_calls()` — parse provider response format
+Both Azure and Databricks backends use the same OpenAI Responses API (`client.responses.create()`), so there's no abstract backend class — just different client construction paths:
+- `_init_azure()` — Azure OpenAI with API key + endpoint
+- `_init_databricks()` — Databricks via `WorkspaceClient` (handles PAT, CLI OAuth, and notebook auth)
+- Pre-built client escape hatch for custom setups
 
-Everything else (tools, parsing, ToolContext, LLMResponse) is provider-agnostic, making it straightforward to add non-Azure or non-OpenAI backends later.
+Everything else (tools, parsing, ToolContext, LLMResponse) is provider-agnostic.
 
 ## Tool Definition
 
@@ -63,11 +64,19 @@ It returns an `AgentResult` with the stop reason, tool call count, and response 
 ## Configuration
 
 Environment variables with `LLM_INTERACTION_*` prefix:
+
+**Azure backend:**
 - `LLM_INTERACTION_API_KEY`
 - `LLM_INTERACTION_ENDPOINT`
 - `LLM_INTERACTION_MODEL`
 
-All three can be overridden via constructor arguments. `python-dotenv` is used to load `.env` files automatically.
+**Databricks backend:**
+- `LLM_INTERACTION_DATABRICKS_HOST`
+- `LLM_INTERACTION_MODEL`
+
+All can be overridden via constructor arguments. `python-dotenv` is used to load `.env` files automatically.
+
+Databricks auth is handled by `WorkspaceClient` from `databricks-sdk`. On-site (notebook) auth is automatic. Off-site (local dev) uses CLI OAuth: `databricks auth login --host <host>`. Token refresh is handled transparently per API call.
 
 ## Templating
 
@@ -75,5 +84,5 @@ Jinja2 is a first-class feature. `prompt_dir` is required in the constructor. Te
 
 ## Future Considerations
 
-- **Backend abstraction**: The provider-specific methods in `client.py` can be extracted into backend classes (e.g., `AzureBackend`, `OpenAIBackend`, `ClaudeBackend`) without changing the rest of the library.
 - **Claude support** would require: different tool schema format, message-based history instead of `previous_response_id`, and different response extraction logic. The parsing, tool, and response layers would remain unchanged.
+- **Backend abstraction**: If a third backend with a different API shape (not OpenAI Responses API) is needed, the provider-specific methods can be extracted into backend classes.

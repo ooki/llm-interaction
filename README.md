@@ -1,11 +1,14 @@
 # llm-interaction
 
-Async Azure OpenAI client with typed tool calling and lazy output parsing.
+Async OpenAI Responses API client with typed tool calling, lazy output parsing, and Azure/Databricks backends.
 
 ## Install
 
 ```bash
 pip install llm-interaction
+
+# For Databricks backend:
+pip install llm-interaction[databricks]
 ```
 
 ## Quick Start
@@ -14,7 +17,11 @@ pip install llm-interaction
 from pathlib import Path
 from llm_interaction import LLMInteraction, tool, ToolContext
 
+# Azure OpenAI (default)
 llm = LLMInteraction(prompt_dir=Path("prompts"))
+
+# Databricks (on-site or off-site with CLI auth)
+llm = LLMInteraction(prompt_dir=Path("prompts"), backend="databricks")
 
 result = await llm.query(system="Be helpful", user="Hello")
 print(result.text)
@@ -161,11 +168,24 @@ result = await llm.agent_loop(
 
 ## Environment Variables
 
+**Azure OpenAI** (default backend):
+
 ```
 LLM_INTERACTION_API_KEY=your-api-key
 LLM_INTERACTION_ENDPOINT=https://your-resource.openai.azure.com
 LLM_INTERACTION_MODEL=gpt-4o
 ```
+
+**Databricks** (`backend="databricks"`):
+
+```
+LLM_INTERACTION_DATABRICKS_HOST=https://your-workspace.azuredatabricks.net
+LLM_INTERACTION_MODEL=your-serving-endpoint
+```
+
+Databricks auth is handled automatically by `WorkspaceClient`:
+- **On-site** (notebook): no setup needed
+- **Off-site** (local dev): run `databricks auth login --host <your-host>` first
 
 ## License
 

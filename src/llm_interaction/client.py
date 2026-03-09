@@ -1,4 +1,4 @@
-"""LLMInteraction — Azure OpenAI Responses API client."""
+"""LLMInteraction — OpenAI Responses API client with Azure and Databricks backends."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ import jinja2
 import json_repair
 import openai
 from dotenv import load_dotenv
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, OpenAI
 
 from llm_interaction.parsing import _extract_function_calls, _extract_text_from_output
 from llm_interaction.response import AgentResult, LLMResponse
@@ -79,27 +79,113 @@ def _inject_context(
 # ---------------------------------------------------------------------------
 
 
+def _resolve_databricks_token(workspace_client: Any) -> str:
+    """Extract bearer token from a Databricks WorkspaceClient.
+
+    Handles both PAT auth (``config.token``) and CLI OAuth auth
+    (``config.authenticate()``).  The latter triggers the OAuth flow
+    and returns headers with the bearer token.
+    """
+    # Static token (PAT or env-var based)
+    if workspace_client.config.token:
+        return workspace_client.config.token
+    # CLI OAuth / notebook auth — triggers token refresh
+    headers = workspace_client.config.authenticate()
+    token = headers.get("Authorization", "").replace("Bearer ", "")
+    if not token:
+        host = workspace_client.config.host or "<unknown>"
+        raise RuntimeError(
+            f"Databricks authentication failed for {host}.\n"
+            f"Auth type detected: {workspace_client.config.auth_type}\n"
+            f"If running locally, authenticate first:\n"
+            f"  databricks auth login --host {host}"
+        )
+    return token
+
+
 class LLMInteraction:
-    """Azure OpenAI Responses API client.
+    """OpenAI Responses API client with Azure and Databricks backends.
+
+    **Azure OpenAI** (default)::
+
+        llm = LLMInteraction(prompt_dir=Path("prompts"))
+
+    **Databricks** (on-site or off-site with CLI auth)::
+
+        llm = LLMInteraction(
+            prompt_dir=Path("prompts"),
+            backend="databricks",
+            model="your-serving-endpoint",
+        )
+
+    **Pre-built client** (escape hatch)::
+
+        llm = LLMInteraction(
+            prompt_dir=Path("prompts"),
+            client=my_openai_client,
+            model="my-model",
+        )
 
     Args:
         prompt_dir: Directory containing Jinja2 prompt templates.
         max_retries: Number of API retry attempts on transient errors.
-        api_key: Override for ``LLM_INTERACTION_API_KEY`` env var.
-        endpoint: Override for ``LLM_INTERACTION_ENDPOINT`` env var.
+        backend: ``"azure"`` (default) or ``"databricks"``.
+        api_key: Override for ``LLM_INTERACTION_API_KEY`` env var (Azure only).
+        endpoint: Override for ``LLM_INTERACTION_ENDPOINT`` env var (Azure only).
         model: Override for ``LLM_INTERACTION_MODEL`` env var.
+        databricks_host: Override for ``LLM_INTERACTION_DATABRICKS_HOST`` env var.
+        client: Pre-built ``OpenAI`` or ``AsyncOpenAI`` instance (skips all auth).
     """
 
     def __init__(
         self,
         prompt_dir: Path,
         max_retries: int = 3,
+        backend: str = "azure",
         api_key: str | None = None,
         endpoint: str | None = None,
         model: str | None = None,
+        databricks_host: str | None = None,
+        client: AsyncOpenAI | OpenAI | None = None,
     ):
         load_dotenv()
 
+        self.model = model or os.getenv("LLM_INTERACTION_MODEL")
+        if not self.model:
+            raise ValueError(
+                "Model required. Set LLM_INTERACTION_MODEL or pass model=."
+            )
+
+        self._max_retries = max_retries
+        self._backend = backend
+        self._workspace_client: Any | None = None  # Databricks WorkspaceClient
+
+        if client is not None:
+            # Pre-built client — skip all auth
+            self._client = client
+            logger.info(
+                "LLMInteraction initialized — pre-built client, model=%s",
+                self.model,
+            )
+
+        elif backend == "databricks":
+            self._init_databricks(databricks_host)
+
+        elif backend == "azure":
+            self._init_azure(api_key, endpoint)
+
+        else:
+            raise ValueError(
+                f"Unknown backend: {backend!r}. Use 'azure' or 'databricks'."
+            )
+
+        self._jinja_env = jinja2.Environment(
+            loader=jinja2.FileSystemLoader(str(prompt_dir)),
+            autoescape=jinja2.select_autoescape(),
+        )
+
+    def _init_azure(self, api_key: str | None, endpoint: str | None) -> None:
+        """Initialize the Azure OpenAI backend."""
         resolved_key = api_key or os.getenv("LLM_INTERACTION_API_KEY")
         if not resolved_key:
             raise ValueError(
@@ -112,26 +198,53 @@ class LLMInteraction:
                 "Endpoint required. Set LLM_INTERACTION_ENDPOINT or pass endpoint=."
             )
 
-        self.model = model or os.getenv("LLM_INTERACTION_MODEL")
-        if not self.model:
-            raise ValueError(
-                "Model required. Set LLM_INTERACTION_MODEL or pass model=."
-            )
-
         base_url = resolved_endpoint.rstrip("/") + "/openai/v1/"
+        self._client = AsyncOpenAI(api_key=resolved_key, base_url=base_url)
 
         logger.info(
-            "LLMInteraction initialized — endpoint=%s model=%s",
+            "LLMInteraction initialized — azure endpoint=%s model=%s",
             resolved_endpoint,
             self.model,
         )
 
-        self._client = AsyncOpenAI(api_key=resolved_key, base_url=base_url)
-        self._max_retries = max_retries
+    def _init_databricks(self, databricks_host: str | None) -> None:
+        """Initialize the Databricks backend via WorkspaceClient."""
+        try:
+            from databricks.sdk import WorkspaceClient
+        except ImportError:
+            raise ImportError(
+                "Databricks backend requires the databricks-sdk package.\n"
+                "Install it with: pip install llm-interaction[databricks]"
+            )
 
-        self._jinja_env = jinja2.Environment(
-            loader=jinja2.FileSystemLoader(str(prompt_dir)),
-            autoescape=jinja2.select_autoescape(),
+        resolved_host = databricks_host or os.getenv("LLM_INTERACTION_DATABRICKS_HOST")
+        kwargs: dict[str, str] = {}
+        if resolved_host:
+            kwargs["host"] = resolved_host
+
+        try:
+            self._workspace_client = WorkspaceClient(**kwargs)
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to create Databricks WorkspaceClient.\n"
+                f"Host: {resolved_host or '(auto-detect)'}\n"
+                f"If running locally, authenticate first:\n"
+                f"  databricks auth login --host {resolved_host or '<your-host>'}\n"
+                f"Error: {e}"
+            ) from e
+
+        resolved_host = self._workspace_client.config.host
+        token = _resolve_databricks_token(self._workspace_client)
+        self._client = AsyncOpenAI(
+            api_key=token,
+            base_url=f"{resolved_host}/serving-endpoints",
+        )
+
+        logger.info(
+            "LLMInteraction initialized — databricks host=%s model=%s auth=%s",
+            resolved_host,
+            self.model,
+            self._workspace_client.config.auth_type,
         )
 
     # -- Jinja rendering ----------------------------------------------------
@@ -161,6 +274,24 @@ class LLMInteraction:
 
     # -- Low-level API call with retry --------------------------------------
 
+    def _refresh_databricks_token(self) -> None:
+        """Re-resolve the Databricks token and update the client.
+
+        CLI OAuth tokens expire, so we refresh before each API call.
+        """
+        if self._workspace_client is None:
+            return
+        try:
+            token = _resolve_databricks_token(self._workspace_client)
+            self._client.api_key = token
+        except RuntimeError:
+            host = self._workspace_client.config.host or "<unknown>"
+            raise RuntimeError(
+                f"Databricks token refresh failed for {host}.\n"
+                f"Your session may have expired. Re-authenticate with:\n"
+                f"  databricks auth login --host {host}"
+            )
+
     async def _call_api(
         self,
         input_items: list[dict[str, Any]],
@@ -168,6 +299,8 @@ class LLMInteraction:
         previous_response_id: str | None = None,
     ) -> Any:
         """Make a single Responses API call with exponential backoff retry."""
+        self._refresh_databricks_token()
+
         kwargs: dict[str, Any] = {
             "model": self.model,
             "input": input_items,
