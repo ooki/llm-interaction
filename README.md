@@ -1,6 +1,6 @@
 # llm-interaction
 
-Async OpenAI Responses API client with typed tool calling, lazy output parsing, and Azure/Databricks backends.
+OpenAI Responses API client with typed tool calling, lazy output parsing, and Azure/Databricks/OpenRouter backends. Supports both async and sync (notebook-friendly) usage.
 
 ## Install
 
@@ -13,23 +13,97 @@ pip install llm-interaction[databricks]
 
 ## Quick Start
 
+### Loading Environment Variables
+
+The library reads configuration from environment variables. Use `python-dotenv` to load them from a `.env` file:
+
+```python
+from dotenv import load_dotenv
+
+# Call this once at the start of your script/notebook
+load_dotenv()
+```
+
+Example `.env` file:
+
+```
+LLM_INTERACTION_API_KEY=your-api-key
+LLM_INTERACTION_ENDPOINT=https://your-resource.openai.azure.com
+LLM_INTERACTION_MODEL=gpt-4o
+```
+
+If your environment variables are already set (e.g., in production), you can skip `load_dotenv()`.
+
+### Sync (Notebook-Friendly)
+
 ```python
 from pathlib import Path
-from llm_interaction import LLMInteraction, tool, ToolContext
+from llm_interaction import LLMInteraction
 
 # Azure OpenAI (default)
 llm = LLMInteraction(prompt_dir=Path("prompts"))
 
-# Databricks (on-site or off-site with CLI auth)
+# Databricks
 llm = LLMInteraction(prompt_dir=Path("prompts"), backend="databricks")
 
+# OpenRouter
+llm = LLMInteraction(
+    prompt_dir=Path("prompts"),
+    backend="openrouter",
+    api_key="your-openrouter-key",
+    model="openai/gpt-4",
+)
+
+# Use sync methods in notebooks (no await needed)
+result = llm.sync_query(system="Be helpful", user="Hello")
+print(result.text)
+
+# Or with templates
+result = llm.sync_query_template(
+    prompt_name="greeting",
+    variables={"name": "Alice"},
+)
+print(result.text)
+
+# Or run an agentic loop
+from llm_interaction import tool
+
+@tool(stop=True)
+def submit_answer(answer: str) -> str:
+    """Submit the final answer."""
+    return "done"
+
+result = llm.sync_agent_loop(
+    system="You are a helpful assistant.",
+    user="What is 2+2?",
+    tools=[submit_answer],
+)
+print(f"Tool calls: {result.tool_call_count}, Reason: {result.stop_reason}")
+```
+
+### Async
+
+```python
+from pathlib import Path
+from llm_interaction import LLMInteraction
+
+llm = LLMInteraction(prompt_dir=Path("prompts"))
+
+# Use async methods in async contexts
 result = await llm.query(system="Be helpful", user="Hello")
+print(result.text)
+
+# Or with templates
+result = await llm.query_template(
+    prompt_name="greeting",
+    variables={"name": "Alice"},
+)
 print(result.text)
 ```
 
 ## Output Parsing
 
-Every `query()` returns an `LLMResponse`. Parsing is lazy — call the method you need:
+Both `query()` and `sync_query()` return an `LLMResponse`. Parsing is lazy — call the method you need:
 
 ```python
 # Raw text
@@ -186,6 +260,13 @@ LLM_INTERACTION_MODEL=your-serving-endpoint
 Databricks auth is handled automatically by `WorkspaceClient`:
 - **On-site** (notebook): no setup needed
 - **Off-site** (local dev): run `databricks auth login --host <your-host>` first
+
+**OpenRouter** (`backend="openrouter"`):
+
+```
+LLM_INTERACTION_API_KEY=your-openrouter-key
+LLM_INTERACTION_MODEL=openai/gpt-4
+```
 
 ## License
 

@@ -13,7 +13,6 @@ from typing import Any, Callable
 import jinja2
 import json_repair
 import openai
-from dotenv import load_dotenv
 from openai import AsyncOpenAI, OpenAI
 
 from llm_interaction.parsing import _extract_function_calls, _extract_text_from_output
@@ -104,7 +103,7 @@ def _resolve_databricks_token(workspace_client: Any) -> str:
 
 
 class LLMInteraction:
-    """OpenAI Responses API client with Azure and Databricks backends.
+    """OpenAI Responses API client with Azure, Databricks, and OpenRouter backends.
 
     **Azure OpenAI** (default)::
 
@@ -118,6 +117,15 @@ class LLMInteraction:
             model="your-serving-endpoint",
         )
 
+    **OpenRouter**::
+
+        llm = LLMInteraction(
+            prompt_dir=Path("prompts"),
+            backend="openrouter",
+            api_key="your-openrouter-key",
+            model="openai/gpt-4",
+        )
+
     **Pre-built client** (escape hatch)::
 
         llm = LLMInteraction(
@@ -129,8 +137,8 @@ class LLMInteraction:
     Args:
         prompt_dir: Directory containing Jinja2 prompt templates.
         max_retries: Number of API retry attempts on transient errors.
-        backend: ``"azure"`` (default) or ``"databricks"``.
-        api_key: Override for ``LLM_INTERACTION_API_KEY`` env var (Azure only).
+        backend: ``"azure"`` (default), ``"databricks"``, or ``"openrouter"``.
+        api_key: Override for ``LLM_INTERACTION_API_KEY`` env var (Azure/OpenRouter).
         endpoint: Override for ``LLM_INTERACTION_ENDPOINT`` env var (Azure only).
         model: Override for ``LLM_INTERACTION_MODEL`` env var.
         databricks_host: Override for ``LLM_INTERACTION_DATABRICKS_HOST`` env var.
@@ -148,8 +156,6 @@ class LLMInteraction:
         databricks_host: str | None = None,
         client: AsyncOpenAI | OpenAI | None = None,
     ):
-        load_dotenv()
-
         self.model = model or os.getenv("LLM_INTERACTION_MODEL")
         if not self.model:
             raise ValueError(
@@ -174,9 +180,12 @@ class LLMInteraction:
         elif backend == "azure":
             self._init_azure(api_key, endpoint)
 
+        elif backend == "openrouter":
+            self._init_openrouter(api_key)
+
         else:
             raise ValueError(
-                f"Unknown backend: {backend!r}. Use 'azure' or 'databricks'."
+                f"Unknown backend: {backend!r}. Use 'azure', 'databricks', or 'openrouter'."
             )
 
         self._jinja_env = jinja2.Environment(
@@ -245,6 +254,24 @@ class LLMInteraction:
             resolved_host,
             self.model,
             self._workspace_client.config.auth_type,
+        )
+
+    def _init_openrouter(self, api_key: str | None) -> None:
+        """Initialize the OpenRouter backend."""
+        resolved_key = api_key or os.getenv("LLM_INTERACTION_API_KEY")
+        if not resolved_key:
+            raise ValueError(
+                "API key required. Set LLM_INTERACTION_API_KEY or pass api_key=."
+            )
+
+        self._client = AsyncOpenAI(
+            api_key=resolved_key,
+            base_url="https://openrouter.ai/api/v1",
+        )
+
+        logger.info(
+            "LLMInteraction initialized — openrouter model=%s",
+            self.model,
         )
 
     # -- Jinja rendering ----------------------------------------------------
@@ -451,6 +478,94 @@ class LLMInteraction:
             tools=tools,
             context=context,
             max_tool_calls=max_tool_calls,
+        )
+
+    # -- sync wrappers ------------------------------------------------------
+
+    def sync_query(
+        self,
+        system: str,
+        user: str,
+        tools: list[ToolDef] | None = None,
+        context: list[Any] | Any | None = None,
+        max_tool_calls: int = 20,
+    ) -> LLMResponse:
+        """Synchronous wrapper for query(). Useful in notebooks.
+
+        Args:
+            system: System prompt.
+            user: User prompt.
+            tools: Optional list of @tool-decorated functions.
+            context: Objects to inject into ToolContext parameters.
+            max_tool_calls: Max tool call rounds before returning.
+
+        Returns:
+            LLMResponse with lazy parsing methods.
+        """
+        return asyncio.run(
+            self.query(system, user, tools, context, max_tool_calls)
+        )
+
+    def sync_query_template(
+        self,
+        prompt_name: str,
+        variables: dict[str, Any],
+        tools: list[ToolDef] | None = None,
+        context: list[Any] | Any | None = None,
+        max_tool_calls: int = 20,
+    ) -> LLMResponse:
+        """Synchronous wrapper for query_template(). Useful in notebooks.
+
+        Looks for ``{prompt_name}_system.jinja`` and
+        ``{prompt_name}_user.jinja`` in the prompt directory.
+
+        Args:
+            prompt_name: Template name prefix.
+            variables: Variables for template rendering.
+            tools: Optional list of @tool-decorated functions.
+            context: Objects to inject into ToolContext parameters.
+            max_tool_calls: Max tool call rounds before returning.
+
+        Returns:
+            LLMResponse with lazy parsing methods.
+        """
+        return asyncio.run(
+            self.query_template(prompt_name, variables, tools, context, max_tool_calls)
+        )
+
+    def sync_agent_loop(
+        self,
+        system: str,
+        user: str,
+        tools: list[ToolDef],
+        context: list[Any] | Any | None = None,
+        max_tool_calls: int = 50,
+        on_tool_call: Callable[[int, str, dict, Any], None] | None = None,
+        previous_response_id: str | None = None,
+    ) -> AgentResult:
+        """Synchronous wrapper for agent_loop(). Useful in notebooks.
+
+        The loop continues until:
+        - The LLM responds with content (no tool calls)
+        - A tool marked ``stop=True`` is called
+        - ``max_tool_calls`` is reached
+
+        Args:
+            system: System prompt.
+            user: User prompt.
+            tools: @tool-decorated functions.
+            context: Objects to inject into ToolContext parameters.
+            max_tool_calls: Maximum total tool calls.
+            on_tool_call: Optional callback(index, name, args, result).
+            previous_response_id: Continue from a previous response.
+
+        Returns:
+            AgentResult with tool call count, stop reason, and response ID.
+        """
+        return asyncio.run(
+            self.agent_loop(
+                system, user, tools, context, max_tool_calls, on_tool_call, previous_response_id
+            )
         )
 
     # -- agent_loop ---------------------------------------------------------

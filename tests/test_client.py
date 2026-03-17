@@ -13,16 +13,14 @@ class TestLLMInteractionInit:
         assert llm.model == "gpt-4o"
 
     def test_init_missing_model_raises(self, tmp_path):
-        with patch("llm_interaction.client.load_dotenv"):
-            with patch.dict("os.environ", {}, clear=True):
-                with pytest.raises(ValueError, match="Model required"):
-                    LLMInteraction(prompt_dir=tmp_path)
+        with patch.dict("os.environ", {}, clear=True):
+            with pytest.raises(ValueError, match="Model required"):
+                LLMInteraction(prompt_dir=tmp_path)
 
     def test_init_missing_key_raises(self, tmp_path):
-        with patch("llm_interaction.client.load_dotenv"):
-            with patch.dict("os.environ", {"LLM_INTERACTION_MODEL": "m"}, clear=True):
-                with pytest.raises(ValueError, match="API key"):
-                    LLMInteraction(prompt_dir=tmp_path)
+        with patch.dict("os.environ", {"LLM_INTERACTION_MODEL": "m"}, clear=True):
+            with pytest.raises(ValueError, match="API key"):
+                LLMInteraction(prompt_dir=tmp_path)
 
     def test_render(self, llm):
         result = llm.render("test_system.jinja", {"topic": "AI"})
@@ -252,3 +250,77 @@ class TestAgentLoop:
         assert len(calls_log) == 1
         assert calls_log[0][1] == "done"
         assert calls_log[0][2] == {"x": 1}
+
+
+class TestSyncMethods:
+    def test_sync_query(self, llm):
+        """sync_query() returns same result as query()."""
+        mock_response = MagicMock()
+        mock_response.output = [
+            MagicMock(type="message", content=[MagicMock(text="Sync response")])
+        ]
+        mock_response.id = "resp_sync"
+
+        llm._client = MagicMock()
+        llm._client.responses = MagicMock()
+        llm._client.responses.create = AsyncMock(return_value=mock_response)
+
+        result = llm.sync_query(system="System", user="User")
+
+        assert isinstance(result, LLMResponse)
+        assert result.text == "Sync response"
+        assert result.response_id == "resp_sync"
+
+    def test_sync_query_template(self, llm):
+        """sync_query_template() renders templates and returns result."""
+        mock_response = MagicMock()
+        mock_response.output = [
+            MagicMock(type="message", content=[MagicMock(text="Template response")])
+        ]
+        mock_response.id = "resp_tmpl"
+
+        llm._client = MagicMock()
+        llm._client.responses = MagicMock()
+        llm._client.responses.create = AsyncMock(return_value=mock_response)
+
+        result = llm.sync_query_template(
+            prompt_name="test",
+            variables={"topic": "AI", "question": "What?"}
+        )
+
+        assert isinstance(result, LLMResponse)
+        assert result.text == "Template response"
+        llm._client.responses.create.assert_called_once()
+
+    def test_sync_agent_loop(self, llm):
+        """sync_agent_loop() runs agentic loop and returns AgentResult."""
+
+        @tool(stop=True)
+        def finish(answer: str) -> str:
+            """Submit final answer."""
+            return "done"
+
+        tool_call_response = MagicMock()
+        tool_call_response.output = [
+            SimpleNamespace(
+                type="function_call",
+                call_id="call_1",
+                name="finish",
+                arguments='{"answer": "42"}',
+            )
+        ]
+        tool_call_response.id = "resp_1"
+
+        llm._client = MagicMock()
+        llm._client.responses = MagicMock()
+        llm._client.responses.create = AsyncMock(return_value=tool_call_response)
+
+        result = llm.sync_agent_loop(
+            system="System",
+            user="User",
+            tools=[finish],
+        )
+
+        assert isinstance(result, AgentResult)
+        assert result.stop_reason == "stop_tool"
+        assert result.tool_call_count == 1

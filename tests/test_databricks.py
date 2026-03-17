@@ -48,14 +48,13 @@ def _make_databricks_env(tmp_path, ws_mock, extra_env=None):
 
     from llm_interaction import LLMInteraction
 
-    with patch("llm_interaction.client.load_dotenv"):
-        with patch.dict("os.environ", env, clear=True):
-            with patch.dict(sys.modules, {"databricks.sdk": mock_module, "databricks": MagicMock()}):
-                with patch("llm_interaction.client.AsyncOpenAI") as mock_aoai:
-                    llm = LLMInteraction(prompt_dir=tmp_path, backend="databricks", **{
-                        k: v for k, v in (extra_env or {}).items()
-                        if k == "databricks_host"
-                    })
+    with patch.dict("os.environ", env, clear=True):
+        with patch.dict(sys.modules, {"databricks.sdk": mock_module, "databricks": MagicMock()}):
+            with patch("llm_interaction.client.AsyncOpenAI") as mock_aoai:
+                llm = LLMInteraction(prompt_dir=tmp_path, backend="databricks", **{
+                    k: v for k, v in (extra_env or {}).items()
+                    if k == "databricks_host"
+                })
     return llm, mock_module, mock_aoai
 
 
@@ -79,16 +78,15 @@ class TestLLMInteractionDatabricksInit:
         mock_module = MagicMock()
         mock_module.WorkspaceClient = MagicMock(return_value=w)
 
-        with patch("llm_interaction.client.load_dotenv"):
-            with patch.dict("os.environ", {"LLM_INTERACTION_MODEL": "my-model"}, clear=True):
-                with patch.dict(sys.modules, {"databricks.sdk": mock_module, "databricks": MagicMock()}):
-                    with patch("llm_interaction.client.AsyncOpenAI") as mock_aoai:
-                        llm = LLMInteraction(
-                            prompt_dir=tmp_path,
-                            backend="databricks",
-                            databricks_host="https://my-workspace.azuredatabricks.net",
-                            model="my-model",
-                        )
+        with patch.dict("os.environ", {"LLM_INTERACTION_MODEL": "my-model"}, clear=True):
+            with patch.dict(sys.modules, {"databricks.sdk": mock_module, "databricks": MagicMock()}):
+                with patch("llm_interaction.client.AsyncOpenAI") as mock_aoai:
+                    llm = LLMInteraction(
+                        prompt_dir=tmp_path,
+                        backend="databricks",
+                        databricks_host="https://my-workspace.azuredatabricks.net",
+                        model="my-model",
+                    )
 
         assert llm.model == "my-model"
         assert llm._workspace_client is not None
@@ -117,14 +115,13 @@ class TestLLMInteractionDatabricksInit:
             "LLM_INTERACTION_DATABRICKS_HOST": "https://env-workspace.azuredatabricks.net",
             "LLM_INTERACTION_MODEL": "my-model",
         }
-        with patch("llm_interaction.client.load_dotenv"):
-            with patch.dict("os.environ", env, clear=True):
-                with patch.dict(sys.modules, {"databricks.sdk": mock_module, "databricks": MagicMock()}):
-                    with patch("llm_interaction.client.AsyncOpenAI"):
-                        llm = LLMInteraction(
-                            prompt_dir=tmp_path,
-                            backend="databricks",
-                        )
+        with patch.dict("os.environ", env, clear=True):
+            with patch.dict(sys.modules, {"databricks.sdk": mock_module, "databricks": MagicMock()}):
+                with patch("llm_interaction.client.AsyncOpenAI"):
+                    llm = LLMInteraction(
+                        prompt_dir=tmp_path,
+                        backend="databricks",
+                    )
 
         assert llm.model == "my-model"
         mock_module.WorkspaceClient.assert_called_once_with(
@@ -140,15 +137,14 @@ class TestLLMInteractionDatabricksInit:
         mock_module = MagicMock()
         mock_module.WorkspaceClient = MagicMock(return_value=w)
 
-        with patch("llm_interaction.client.load_dotenv"):
-            with patch.dict("os.environ", {"LLM_INTERACTION_MODEL": "m"}, clear=True):
-                with patch.dict(sys.modules, {"databricks.sdk": mock_module, "databricks": MagicMock()}):
-                    with patch("llm_interaction.client.AsyncOpenAI") as mock_aoai:
-                        llm = LLMInteraction(
-                            prompt_dir=tmp_path,
-                            backend="databricks",
-                            databricks_host="https://ws.azuredatabricks.net",
-                        )
+        with patch.dict("os.environ", {"LLM_INTERACTION_MODEL": "m"}, clear=True):
+            with patch.dict(sys.modules, {"databricks.sdk": mock_module, "databricks": MagicMock()}):
+                with patch("llm_interaction.client.AsyncOpenAI") as mock_aoai:
+                    llm = LLMInteraction(
+                        prompt_dir=tmp_path,
+                        backend="databricks",
+                        databricks_host="https://ws.azuredatabricks.net",
+                    )
 
         mock_aoai.assert_called_once_with(
             api_key="dapi-static-pat",
@@ -167,11 +163,10 @@ class TestLLMInteractionDatabricksInit:
                 hidden[key] = sys.modules.pop(key)
 
         try:
-            with patch("llm_interaction.client.load_dotenv"):
-                with patch.dict("os.environ", {"LLM_INTERACTION_MODEL": "m"}, clear=True):
-                    with patch("builtins.__import__", side_effect=_import_without_databricks):
-                        with pytest.raises(ImportError, match="pip install llm-interaction\\[databricks\\]"):
-                            LLMInteraction(prompt_dir=tmp_path, backend="databricks")
+            with patch.dict("os.environ", {"LLM_INTERACTION_MODEL": "m"}, clear=True):
+                with patch("builtins.__import__", side_effect=_import_without_databricks):
+                    with pytest.raises(ImportError, match="pip install llm-interaction\\[databricks\\]"):
+                        LLMInteraction(prompt_dir=tmp_path, backend="databricks")
         finally:
             sys.modules.update(hidden)
 
@@ -179,10 +174,9 @@ class TestLLMInteractionDatabricksInit:
         """Unknown backend string raises ValueError."""
         from llm_interaction import LLMInteraction
 
-        with patch("llm_interaction.client.load_dotenv"):
-            with patch.dict("os.environ", {"LLM_INTERACTION_MODEL": "m"}, clear=True):
-                with pytest.raises(ValueError, match="Unknown backend"):
-                    LLMInteraction(prompt_dir=tmp_path, backend="gcp")
+        with patch.dict("os.environ", {"LLM_INTERACTION_MODEL": "m"}, clear=True):
+            with pytest.raises(ValueError, match="Unknown backend"):
+                LLMInteraction(prompt_dir=tmp_path, backend="gcp")
 
 
 class TestDatabricksTokenRefresh:
