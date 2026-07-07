@@ -30,6 +30,9 @@ Repository = "https://github.com/ooki/llm-interaction"
 databricks = [
     "databricks-sdk>=0.20",
 ]
+litellm = [
+    "litellm>=1.70",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",

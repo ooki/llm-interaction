@@ -2,7 +2,7 @@
 
 ## Overview
 
-`llm-interaction` is a Python library for calling the OpenAI Responses API via Azure or Databricks backends. Install with `pip install llm-interaction`. For Databricks: `pip install llm-interaction[databricks]`. Import as `from llm_interaction import ...`.
+`llm-interaction` is a Python library for calling the OpenAI Responses API via Azure, Databricks, OpenRouter, or LiteLLM backends. Install with `pip install llm-interaction`. For Databricks: `pip install llm-interaction[databricks]`. For LiteLLM (Anthropic, Databricks Claude, Vertex AI, etc.): `pip install llm-interaction[litellm]`. Import as `from llm_interaction import ...`.
 
 ## Public API
 
@@ -19,6 +19,9 @@ llm = LLMInteraction(prompt_dir=Path("prompts"))
 # Databricks (on-site or off-site with CLI auth)
 llm = LLMInteraction(prompt_dir=Path("prompts"), backend="databricks")
 
+# LiteLLM (universal provider support — Claude on Databricks, Anthropic, etc.)
+llm = LLMInteraction(prompt_dir=Path("prompts"), backend="litellm")
+
 # Pre-built client
 llm = LLMInteraction(prompt_dir=Path("prompts"), client=my_client, model="m")
 ```
@@ -26,6 +29,8 @@ llm = LLMInteraction(prompt_dir=Path("prompts"), client=my_client, model="m")
 Constructor reads env vars: `LLM_INTERACTION_API_KEY`, `LLM_INTERACTION_ENDPOINT`, `LLM_INTERACTION_MODEL`. All three can be overridden via kwargs.
 
 **Databricks env vars:** `LLM_INTERACTION_DATABRICKS_HOST`, `LLM_INTERACTION_MODEL`. Auth is handled via `WorkspaceClient` (PAT, CLI OAuth, or notebook auth).
+
+**LiteLLM env vars:** `LLM_INTERACTION_API_KEY`, `LLM_INTERACTION_ENDPOINT`, `LLM_INTERACTION_MODEL`. The model must use litellm's `provider/model` format (e.g. `databricks/my-claude`, `anthropic/claude-sonnet-4-20250514`). The `LLM_INTERACTION_*` env vars are automatically forwarded to the provider-specific env vars that LiteLLM expects (e.g. `DATABRICKS_API_KEY`, `ANTHROPIC_API_KEY`).
 
 **Methods:**
 - `await llm.query(system: str, user: str, tools?, context?, max_tool_calls?) -> LLMResponse`
@@ -99,5 +104,5 @@ src/llm_interaction/
 ├── _schema.py     # type-to-JSON-Schema, docstring parsing
 ├── parsing.py     # JSON/YAML/scratchpad extraction
 ├── response.py    # LLMResponse, AgentResult
-└── client.py      # LLMInteraction, context matching, Azure/Databricks backends
+└── client.py      # LLMInteraction, context matching, Azure/Databricks/LiteLLM backends
 ```

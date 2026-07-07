@@ -102,8 +102,52 @@ def _resolve_databricks_token(workspace_client: Any) -> str:
     return token
 
 
+# ---------------------------------------------------------------------------
+# LiteLLM env-var forwarding
+# ---------------------------------------------------------------------------
+
+# Maps model prefix -> (api_key env var, api_base env var or None)
+_LITELLM_ENV_MAP: dict[str, tuple[str, str | None]] = {
+    "databricks": ("DATABRICKS_API_KEY", "DATABRICKS_API_BASE"),
+    "anthropic": ("ANTHROPIC_API_KEY", None),
+    "azure": ("AZURE_API_KEY", "AZURE_API_BASE"),
+    "openrouter": ("OPENROUTER_API_KEY", None),
+}
+
+
+def _forward_litellm_env(
+    prefix: str,
+    api_key: str | None,
+    endpoint: str | None,
+    fallback_kwargs: dict[str, str],
+) -> None:
+    """Forward LLM_INTERACTION_* values to provider-specific env vars.
+
+    For known providers, sets the env vars that LiteLLM reads.
+    For unknown providers, stores ``api_key``/``api_base`` in
+    *fallback_kwargs* which are passed to each ``aresponses()`` call.
+    """
+    mapping = _LITELLM_ENV_MAP.get(prefix)
+
+    if mapping is not None:
+        key_env, base_env = mapping
+        if api_key:
+            os.environ.setdefault(key_env, api_key)
+        if base_env and endpoint:
+            base_value = endpoint.rstrip("/")
+            if prefix == "databricks" and not base_value.endswith("/serving-endpoints"):
+                base_value += "/serving-endpoints"
+            os.environ.setdefault(base_env, base_value)
+    else:
+        # Unknown provider — pass as kwargs to aresponses()
+        if api_key:
+            fallback_kwargs["api_key"] = api_key
+        if endpoint:
+            fallback_kwargs["api_base"] = endpoint.rstrip("/")
+
+
 class LLMInteraction:
-    """OpenAI Responses API client with Azure, Databricks, and OpenRouter backends.
+    """OpenAI Responses API client with Azure, Databricks, OpenRouter, and LiteLLM backends.
 
     **Azure OpenAI** (default)::
 
@@ -126,6 +170,14 @@ class LLMInteraction:
             model="openai/gpt-4",
         )
 
+    **LiteLLM** (universal provider support — Anthropic, Databricks Claude, etc.)::
+
+        llm = LLMInteraction(
+            prompt_dir=Path("prompts"),
+            backend="litellm",
+            model="databricks/databricks-claude-opus-4-8",
+        )
+
     **Pre-built client** (escape hatch)::
 
         llm = LLMInteraction(
@@ -137,9 +189,9 @@ class LLMInteraction:
     Args:
         prompt_dir: Directory containing Jinja2 prompt templates.
         max_retries: Number of API retry attempts on transient errors.
-        backend: ``"azure"`` (default), ``"databricks"``, or ``"openrouter"``.
-        api_key: Override for ``LLM_INTERACTION_API_KEY`` env var (Azure/OpenRouter).
-        endpoint: Override for ``LLM_INTERACTION_ENDPOINT`` env var (Azure only).
+        backend: ``"azure"`` (default), ``"databricks"``, ``"openrouter"``, or ``"litellm"``.
+        api_key: Override for ``LLM_INTERACTION_API_KEY`` env var.
+        endpoint: Override for ``LLM_INTERACTION_ENDPOINT`` env var.
         model: Override for ``LLM_INTERACTION_MODEL`` env var.
         databricks_host: Override for ``LLM_INTERACTION_DATABRICKS_HOST`` env var.
         client: Pre-built ``OpenAI`` or ``AsyncOpenAI`` instance (skips all auth).
@@ -183,9 +235,12 @@ class LLMInteraction:
         elif backend == "openrouter":
             self._init_openrouter(api_key)
 
+        elif backend == "litellm":
+            self._init_litellm(api_key, endpoint)
+
         else:
             raise ValueError(
-                f"Unknown backend: {backend!r}. Use 'azure', 'databricks', or 'openrouter'."
+                f"Unknown backend: {backend!r}. Use 'azure', 'databricks', 'openrouter', or 'litellm'."
             )
 
         self._jinja_env = jinja2.Environment(
@@ -274,6 +329,36 @@ class LLMInteraction:
             self.model,
         )
 
+    def _init_litellm(self, api_key: str | None, endpoint: str | None) -> None:
+        """Initialize the LiteLLM backend.
+
+        Forwards ``LLM_INTERACTION_*`` env vars to the provider-specific
+        env vars that LiteLLM expects, based on the model prefix.
+        """
+        try:
+            import litellm as _litellm
+        except ImportError:
+            raise ImportError(
+                "LiteLLM backend requires the litellm package.\n"
+                "Install it with: pip install llm-interaction[litellm]"
+            )
+
+        self._litellm = _litellm
+        self._litellm_kwargs: dict[str, str] = {}
+
+        resolved_key = api_key or os.getenv("LLM_INTERACTION_API_KEY")
+        resolved_endpoint = endpoint or os.getenv("LLM_INTERACTION_ENDPOINT")
+
+        prefix = self.model.split("/")[0] if "/" in self.model else ""
+        _forward_litellm_env(prefix, resolved_key, resolved_endpoint,
+                             self._litellm_kwargs)
+
+        logger.info(
+            "LLMInteraction initialized — litellm provider=%s model=%s",
+            prefix or "(auto)",
+            self.model,
+        )
+
     # -- Jinja rendering ----------------------------------------------------
 
     def render(self, template_name: str, variables: dict[str, Any]) -> str:
@@ -326,6 +411,11 @@ class LLMInteraction:
         previous_response_id: str | None = None,
     ) -> Any:
         """Make a single Responses API call with exponential backoff retry."""
+        if self._backend == "litellm":
+            return await self._call_api_litellm(
+                input_items, tools, previous_response_id
+            )
+
         self._refresh_databricks_token()
 
         kwargs: dict[str, Any] = {
@@ -360,6 +450,45 @@ class LLMInteraction:
 
         raise RuntimeError(
             f"API call failed after {self._max_retries} retries. Last error: {last_exc}"
+        )
+
+    async def _call_api_litellm(
+        self,
+        input_items: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        previous_response_id: str | None = None,
+    ) -> Any:
+        """Make a Responses API call via LiteLLM with exponential backoff retry."""
+        kwargs: dict[str, Any] = {
+            "model": self.model,
+            "input": input_items,
+            **self._litellm_kwargs,
+        }
+        if tools:
+            kwargs["tools"] = tools
+        if previous_response_id:
+            kwargs["previous_response_id"] = previous_response_id
+
+        last_exc: Exception | None = None
+        for attempt in range(self._max_retries):
+            try:
+                return await self._litellm.aresponses(**kwargs)
+            except Exception as e:
+                last_exc = e
+                if attempt < self._max_retries - 1:
+                    wait = (2**attempt) + random.uniform(0, 1)
+                    logger.warning(
+                        "LiteLLM API error (attempt %d/%d): %s — retrying in %.1fs",
+                        attempt + 1,
+                        self._max_retries,
+                        e,
+                        wait,
+                    )
+                    await asyncio.sleep(wait)
+
+        raise RuntimeError(
+            f"LiteLLM API call failed after {self._max_retries} retries. "
+            f"Last error: {last_exc}"
         )
 
     # -- query --------------------------------------------------------------
