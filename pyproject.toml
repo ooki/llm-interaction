@@ -5,8 +5,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "llm-interaction"
-version = "0.1.3"
-description = "Async OpenAI Responses API client with typed tool calling, lazy output parsing, and Azure/Databricks backends"
+version = "0.1.4"
+description = "Async multi-provider LLM client with typed tool calling, lazy output parsing, and Azure/Databricks/OpenRouter/LiteLLM/DeepSeek/local backends"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"

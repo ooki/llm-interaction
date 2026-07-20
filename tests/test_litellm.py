@@ -256,7 +256,8 @@ class TestCallApiLitellm:
             )
         )
 
-        assert result is mock_response
+        assert result.output == mock_response.output
+        assert result.id == "resp-123"
         mock_litellm.aresponses.assert_called_once()
         call_kwargs = mock_litellm.aresponses.call_args[1]
         assert call_kwargs["model"] == "databricks/my-claude"
@@ -370,14 +371,14 @@ class TestCallApiLitellm:
                     max_retries=2,
                 )
 
-        with patch("llm_interaction.client.asyncio.sleep", new_callable=AsyncMock):
+        with patch("llm_interaction.backend.asyncio.sleep", new_callable=AsyncMock):
             result = asyncio.run(
                 llm._call_api_litellm(
                     [{"role": "user", "content": "hi"}]
                 )
             )
 
-        assert result is mock_response
+        assert result.id == "resp-ok"
         assert mock_litellm.aresponses.call_count == 2
 
     def test_all_retries_exhausted_raises(self, tmp_path):
@@ -398,7 +399,7 @@ class TestCallApiLitellm:
                     max_retries=2,
                 )
 
-        with patch("llm_interaction.client.asyncio.sleep", new_callable=AsyncMock):
+        with patch("llm_interaction.backend.asyncio.sleep", new_callable=AsyncMock):
             with pytest.raises(RuntimeError, match="LiteLLM API call failed"):
                 asyncio.run(
                     llm._call_api_litellm(
@@ -428,7 +429,7 @@ class TestCallApiLitellm:
             llm._call_api([{"role": "user", "content": "hi"}])
         )
 
-        assert result is mock_response
+        assert result.id == "resp-dispatch"
         mock_litellm.aresponses.assert_called_once()
 
 

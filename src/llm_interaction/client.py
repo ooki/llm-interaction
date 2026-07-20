@@ -1,4 +1,5 @@
-"""LLMInteraction — OpenAI Responses API client with Azure and Databricks backends."""
+"""LLMInteraction — multi-provider LLM client with Azure, Databricks, OpenRouter,
+LiteLLM, DeepSeek, and local (llama-server) backends."""
 
 from __future__ import annotations
 
@@ -15,6 +16,12 @@ import json_repair
 import openai
 from openai import AsyncOpenAI, OpenAI
 
+from llm_interaction.backend import (
+    Backend,
+    ChatCompletionsBackend,
+    LiteLLMBackend,
+    ResponsesBackend,
+)
 from llm_interaction.parsing import _extract_function_calls, _extract_text_from_output
 from llm_interaction.response import AgentResult, LLMResponse
 from llm_interaction.tool import ToolContext, ToolDef
@@ -147,7 +154,7 @@ def _forward_litellm_env(
 
 
 class LLMInteraction:
-    """OpenAI Responses API client with Azure, Databricks, OpenRouter, and LiteLLM backends.
+    """Multi-provider LLM client with typed tool calling and lazy output parsing.
 
     **Azure OpenAI** (default)::
 
@@ -178,6 +185,23 @@ class LLMInteraction:
             model="databricks/databricks-claude-opus-4-8",
         )
 
+    **DeepSeek** (Chat Completions API)::
+
+        llm = LLMInteraction(
+            prompt_dir=Path("prompts"),
+            backend="deepseek",
+            model="deepseek-chat",
+        )
+
+    **Local** (llama-server or any OpenAI-compat server)::
+
+        llm = LLMInteraction(
+            prompt_dir=Path("prompts"),
+            backend="local",
+            model="my-model",
+            endpoint="http://localhost:8080/v1",
+        )
+
     **Pre-built client** (escape hatch)::
 
         llm = LLMInteraction(
@@ -186,10 +210,15 @@ class LLMInteraction:
             model="my-model",
         )
 
+    The backend can also be set via the ``LLM_INTERACTION_BACKEND`` env var
+    so you can switch providers without changing code.
+
     Args:
         prompt_dir: Directory containing Jinja2 prompt templates.
         max_retries: Number of API retry attempts on transient errors.
-        backend: ``"azure"`` (default), ``"databricks"``, ``"openrouter"``, or ``"litellm"``.
+        backend: ``"azure"`` (default), ``"databricks"``, ``"openrouter"``,
+                 ``"litellm"``, ``"deepseek"``, or ``"local"``.
+                 Falls back to ``LLM_INTERACTION_BACKEND`` env var.
         api_key: Override for ``LLM_INTERACTION_API_KEY`` env var.
         endpoint: Override for ``LLM_INTERACTION_ENDPOINT`` env var.
         model: Override for ``LLM_INTERACTION_MODEL`` env var.
@@ -201,7 +230,7 @@ class LLMInteraction:
         self,
         prompt_dir: Path,
         max_retries: int = 3,
-        backend: str = "azure",
+        backend: str | None = None,
         api_key: str | None = None,
         endpoint: str | None = None,
         model: str | None = None,
@@ -215,38 +244,62 @@ class LLMInteraction:
             )
 
         self._max_retries = max_retries
-        self._backend = backend
+        self._backend = backend or os.getenv("LLM_INTERACTION_BACKEND", "azure")
         self._workspace_client: Any | None = None  # Databricks WorkspaceClient
+        self._backend_impl: Backend | None = None
+        self.__client: Any | None = None  # backing store for _client property
 
         if client is not None:
-            # Pre-built client — skip all auth
-            self._client = client
+            # Pre-built client — skip all auth, wrap in ResponsesBackend
+            self.__client = client
+            self._backend_impl = ResponsesBackend(
+                client=client, model=self.model, max_retries=max_retries
+            )
             logger.info(
                 "LLMInteraction initialized — pre-built client, model=%s",
                 self.model,
             )
 
-        elif backend == "databricks":
+        elif self._backend == "databricks":
             self._init_databricks(databricks_host)
 
-        elif backend == "azure":
+        elif self._backend == "azure":
             self._init_azure(api_key, endpoint)
 
-        elif backend == "openrouter":
+        elif self._backend == "openrouter":
             self._init_openrouter(api_key)
 
-        elif backend == "litellm":
+        elif self._backend == "litellm":
             self._init_litellm(api_key, endpoint)
+
+        elif self._backend == "deepseek":
+            self._init_deepseek(api_key)
+
+        elif self._backend == "local":
+            self._init_local(endpoint)
 
         else:
             raise ValueError(
-                f"Unknown backend: {backend!r}. Use 'azure', 'databricks', 'openrouter', or 'litellm'."
+                f"Unknown backend: {self._backend!r}. "
+                f"Use 'azure', 'databricks', 'openrouter', 'litellm', 'deepseek', or 'local'."
             )
 
         self._jinja_env = jinja2.Environment(
             loader=jinja2.FileSystemLoader(str(prompt_dir)),
             autoescape=jinja2.select_autoescape(),
         )
+
+    # -- _client property (syncs with backend) ------------------------------
+
+    @property
+    def _client(self) -> Any:
+        return self.__client
+
+    @_client.setter
+    def _client(self, value: Any) -> None:
+        self.__client = value
+        if self._backend_impl is not None and hasattr(self._backend_impl, 'client'):
+            self._backend_impl.client = value
 
     def _init_azure(self, api_key: str | None, endpoint: str | None) -> None:
         """Initialize the Azure OpenAI backend."""
@@ -264,6 +317,9 @@ class LLMInteraction:
 
         base_url = resolved_endpoint.rstrip("/") + "/openai/v1/"
         self._client = AsyncOpenAI(api_key=resolved_key, base_url=base_url)
+        self._backend_impl = ResponsesBackend(
+            client=self._client, model=self.model, max_retries=self._max_retries
+        )
 
         logger.info(
             "LLMInteraction initialized — azure endpoint=%s model=%s",
@@ -303,6 +359,12 @@ class LLMInteraction:
             api_key=token,
             base_url=f"{resolved_host}/serving-endpoints",
         )
+        self._backend_impl = ResponsesBackend(
+            client=self._client,
+            model=self.model,
+            max_retries=self._max_retries,
+            token_refresher=self._refresh_databricks_token,
+        )
 
         logger.info(
             "LLMInteraction initialized — databricks host=%s model=%s auth=%s",
@@ -322,6 +384,9 @@ class LLMInteraction:
         self._client = AsyncOpenAI(
             api_key=resolved_key,
             base_url="https://openrouter.ai/api/v1",
+        )
+        self._backend_impl = ResponsesBackend(
+            client=self._client, model=self.model, max_retries=self._max_retries
         )
 
         logger.info(
@@ -353,9 +418,61 @@ class LLMInteraction:
         _forward_litellm_env(prefix, resolved_key, resolved_endpoint,
                              self._litellm_kwargs)
 
+        self._backend_impl = LiteLLMBackend(
+            litellm_module=_litellm,
+            model=self.model,
+            max_retries=self._max_retries,
+            extra_kwargs=self._litellm_kwargs,
+        )
+
         logger.info(
             "LLMInteraction initialized — litellm provider=%s model=%s",
             prefix or "(auto)",
+            self.model,
+        )
+
+    def _init_deepseek(self, api_key: str | None) -> None:
+        """Initialize the DeepSeek backend (Chat Completions API)."""
+        resolved_key = api_key or os.getenv("LLM_INTERACTION_API_KEY")
+        if not resolved_key:
+            raise ValueError(
+                "API key required. Set LLM_INTERACTION_API_KEY or pass api_key=."
+            )
+
+        self._client = AsyncOpenAI(
+            api_key=resolved_key,
+            base_url="https://api.deepseek.com",
+        )
+        self._backend_impl = ChatCompletionsBackend(
+            client=self._client, model=self.model, max_retries=self._max_retries
+        )
+
+        logger.info(
+            "LLMInteraction initialized — deepseek model=%s",
+            self.model,
+        )
+
+    def _init_local(self, endpoint: str | None) -> None:
+        """Initialize a local backend (llama-server or any OpenAI-compat server).
+
+        Uses the Responses API (``/v1/responses``) which llama-server supports
+        natively.
+        """
+        resolved_endpoint = endpoint or os.getenv(
+            "LLM_INTERACTION_ENDPOINT", "http://localhost:8080/v1"
+        )
+
+        self._client = AsyncOpenAI(
+            api_key="no-key",
+            base_url=resolved_endpoint,
+        )
+        self._backend_impl = ResponsesBackend(
+            client=self._client, model=self.model, max_retries=self._max_retries
+        )
+
+        logger.info(
+            "LLMInteraction initialized — local endpoint=%s model=%s",
+            resolved_endpoint,
             self.model,
         )
 
@@ -410,46 +527,9 @@ class LLMInteraction:
         tools: list[dict[str, Any]] | None = None,
         previous_response_id: str | None = None,
     ) -> Any:
-        """Make a single Responses API call with exponential backoff retry."""
-        if self._backend == "litellm":
-            return await self._call_api_litellm(
-                input_items, tools, previous_response_id
-            )
-
-        self._refresh_databricks_token()
-
-        kwargs: dict[str, Any] = {
-            "model": self.model,
-            "input": input_items,
-        }
-        if tools:
-            kwargs["tools"] = tools
-        if previous_response_id:
-            kwargs["previous_response_id"] = previous_response_id
-
-        last_exc: Exception | None = None
-        for attempt in range(self._max_retries):
-            try:
-                return await self._client.responses.create(**kwargs)
-            except (
-                openai.APIError,
-                openai.RateLimitError,
-                openai.APIConnectionError,
-            ) as e:
-                last_exc = e
-                if attempt < self._max_retries - 1:
-                    wait = (2**attempt) + random.uniform(0, 1)
-                    logger.warning(
-                        "API error (attempt %d/%d): %s — retrying in %.1fs",
-                        attempt + 1,
-                        self._max_retries,
-                        e,
-                        wait,
-                    )
-                    await asyncio.sleep(wait)
-
-        raise RuntimeError(
-            f"API call failed after {self._max_retries} retries. Last error: {last_exc}"
+        """Delegate to the backend implementation."""
+        return await self._backend_impl.call(
+            input_items, tools, previous_response_id
         )
 
     async def _call_api_litellm(
@@ -458,38 +538,8 @@ class LLMInteraction:
         tools: list[dict[str, Any]] | None = None,
         previous_response_id: str | None = None,
     ) -> Any:
-        """Make a Responses API call via LiteLLM with exponential backoff retry."""
-        kwargs: dict[str, Any] = {
-            "model": self.model,
-            "input": input_items,
-            **self._litellm_kwargs,
-        }
-        if tools:
-            kwargs["tools"] = tools
-        if previous_response_id:
-            kwargs["previous_response_id"] = previous_response_id
-
-        last_exc: Exception | None = None
-        for attempt in range(self._max_retries):
-            try:
-                return await self._litellm.aresponses(**kwargs)
-            except Exception as e:
-                last_exc = e
-                if attempt < self._max_retries - 1:
-                    wait = (2**attempt) + random.uniform(0, 1)
-                    logger.warning(
-                        "LiteLLM API error (attempt %d/%d): %s — retrying in %.1fs",
-                        attempt + 1,
-                        self._max_retries,
-                        e,
-                        wait,
-                    )
-                    await asyncio.sleep(wait)
-
-        raise RuntimeError(
-            f"LiteLLM API call failed after {self._max_retries} retries. "
-            f"Last error: {last_exc}"
-        )
+        """Backward-compat alias — delegates to ``_call_api``."""
+        return await self._call_api(input_items, tools, previous_response_id)
 
     # -- query --------------------------------------------------------------
 

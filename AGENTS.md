@@ -2,7 +2,7 @@
 
 ## Overview
 
-`llm-interaction` is a Python library for calling the OpenAI Responses API via Azure, Databricks, OpenRouter, or LiteLLM backends. Install with `pip install llm-interaction`. For Databricks: `pip install llm-interaction[databricks]`. For LiteLLM (Anthropic, Databricks Claude, Vertex AI, etc.): `pip install llm-interaction[litellm]`. Import as `from llm_interaction import ...`.
+`llm-interaction` is a Python library for calling LLMs via Azure, Databricks, OpenRouter, LiteLLM, DeepSeek, or local (llama-server) backends. Install with `pip install llm-interaction`. For Databricks: `pip install llm-interaction[databricks]`. For LiteLLM (Anthropic, Databricks Claude, Vertex AI, etc.): `pip install llm-interaction[litellm]`. Import as `from llm_interaction import ...`.
 
 ## Public API
 
@@ -22,15 +22,25 @@ llm = LLMInteraction(prompt_dir=Path("prompts"), backend="databricks")
 # LiteLLM (universal provider support — Claude on Databricks, Anthropic, etc.)
 llm = LLMInteraction(prompt_dir=Path("prompts"), backend="litellm")
 
+# DeepSeek (Chat Completions API)
+llm = LLMInteraction(prompt_dir=Path("prompts"), backend="deepseek")
+
+# Local (llama-server or any OpenAI-compat server)
+llm = LLMInteraction(prompt_dir=Path("prompts"), backend="local", endpoint="http://localhost:8080/v1")
+
 # Pre-built client
 llm = LLMInteraction(prompt_dir=Path("prompts"), client=my_client, model="m")
 ```
 
-Constructor reads env vars: `LLM_INTERACTION_API_KEY`, `LLM_INTERACTION_ENDPOINT`, `LLM_INTERACTION_MODEL`. All three can be overridden via kwargs.
+Constructor reads env vars: `LLM_INTERACTION_API_KEY`, `LLM_INTERACTION_ENDPOINT`, `LLM_INTERACTION_MODEL`, `LLM_INTERACTION_BACKEND`. All can be overridden via kwargs. The `LLM_INTERACTION_BACKEND` env var defaults to `"azure"` and lets you switch providers without code changes.
 
 **Databricks env vars:** `LLM_INTERACTION_DATABRICKS_HOST`, `LLM_INTERACTION_MODEL`. Auth is handled via `WorkspaceClient` (PAT, CLI OAuth, or notebook auth).
 
 **LiteLLM env vars:** `LLM_INTERACTION_API_KEY`, `LLM_INTERACTION_ENDPOINT`, `LLM_INTERACTION_MODEL`. The model must use litellm's `provider/model` format (e.g. `databricks/my-claude`, `anthropic/claude-sonnet-4-20250514`). The `LLM_INTERACTION_*` env vars are automatically forwarded to the provider-specific env vars that LiteLLM expects (e.g. `DATABRICKS_API_KEY`, `ANTHROPIC_API_KEY`).
+
+**DeepSeek env vars:** `LLM_INTERACTION_API_KEY`, `LLM_INTERACTION_MODEL`. Uses the Chat Completions API (resends full message history each turn).
+
+**Local env vars:** `LLM_INTERACTION_ENDPOINT` (defaults to `http://localhost:8080/v1`), `LLM_INTERACTION_MODEL`. No API key required. Uses the Responses API (`/v1/responses`) which llama-server supports natively.
 
 **Methods:**
 - `await llm.query(system: str, user: str, tools?, context?, max_tool_calls?) -> LLMResponse`
@@ -100,9 +110,10 @@ Jinja2 templates in `prompt_dir`. Naming: `{name}_system.jinja` and `{name}_user
 ```
 src/llm_interaction/
 ├── __init__.py    # public re-exports
+├── backend.py     # Backend ABC, ResponsesBackend, ChatCompletionsBackend, LiteLLMBackend
 ├── tool.py        # @tool, ToolDef, ToolContext
 ├── _schema.py     # type-to-JSON-Schema, docstring parsing
 ├── parsing.py     # JSON/YAML/scratchpad extraction
 ├── response.py    # LLMResponse, AgentResult
-└── client.py      # LLMInteraction, context matching, Azure/Databricks/LiteLLM backends
+└── client.py      # LLMInteraction, context matching, provider init
 ```

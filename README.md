@@ -1,6 +1,6 @@
 # llm-interaction
 
-OpenAI Responses API client with typed tool calling, lazy output parsing, and Azure/Databricks/OpenRouter backends. Supports both async and sync (notebook-friendly) usage.
+Multi-provider LLM client with typed tool calling, lazy output parsing, and Azure/Databricks/OpenRouter/LiteLLM/DeepSeek/local backends. Supports both async and sync (notebook-friendly) usage.
 
 ## Install
 
@@ -9,6 +9,9 @@ pip install llm-interaction
 
 # For Databricks backend:
 pip install llm-interaction[databricks]
+
+# For LiteLLM backend (Anthropic, Databricks Claude, Vertex AI, etc.):
+pip install llm-interaction[litellm]
 ```
 
 ## Quick Start
@@ -30,6 +33,7 @@ Example `.env` file:
 LLM_INTERACTION_API_KEY=your-api-key
 LLM_INTERACTION_ENDPOINT=https://your-resource.openai.azure.com
 LLM_INTERACTION_MODEL=gpt-4o
+LLM_INTERACTION_BACKEND=azure   # optional, defaults to "azure"
 ```
 
 If your environment variables are already set (e.g., in production), you can skip `load_dotenv()`.
@@ -53,6 +57,15 @@ llm = LLMInteraction(
     api_key="your-openrouter-key",
     model="openai/gpt-4",
 )
+
+# LiteLLM (universal provider support)
+llm = LLMInteraction(prompt_dir=Path("prompts"), backend="litellm")
+
+# DeepSeek
+llm = LLMInteraction(prompt_dir=Path("prompts"), backend="deepseek")
+
+# Local (llama-server)
+llm = LLMInteraction(prompt_dir=Path("prompts"), backend="local")
 
 # Use sync methods in notebooks (no await needed)
 result = llm.sync_query(system="Be helpful", user="Hello")
@@ -242,9 +255,12 @@ result = await llm.agent_loop(
 
 ## Environment Variables
 
+Set `LLM_INTERACTION_BACKEND` to switch providers without changing code (defaults to `"azure"`).
+
 **Azure OpenAI** (default backend):
 
 ```
+LLM_INTERACTION_BACKEND=azure
 LLM_INTERACTION_API_KEY=your-api-key
 LLM_INTERACTION_ENDPOINT=https://your-resource.openai.azure.com
 LLM_INTERACTION_MODEL=gpt-4o
@@ -253,6 +269,7 @@ LLM_INTERACTION_MODEL=gpt-4o
 **Databricks** (`backend="databricks"`):
 
 ```
+LLM_INTERACTION_BACKEND=databricks
 LLM_INTERACTION_DATABRICKS_HOST=https://your-workspace.azuredatabricks.net
 LLM_INTERACTION_MODEL=your-serving-endpoint
 ```
@@ -264,9 +281,41 @@ Databricks auth is handled automatically by `WorkspaceClient`:
 **OpenRouter** (`backend="openrouter"`):
 
 ```
+LLM_INTERACTION_BACKEND=openrouter
 LLM_INTERACTION_API_KEY=your-openrouter-key
 LLM_INTERACTION_MODEL=openai/gpt-4
 ```
+
+**LiteLLM** (`backend="litellm"`):
+
+```
+LLM_INTERACTION_BACKEND=litellm
+LLM_INTERACTION_API_KEY=your-provider-key
+LLM_INTERACTION_ENDPOINT=https://provider-endpoint   # optional, depends on provider
+LLM_INTERACTION_MODEL=databricks/my-claude           # must use litellm's provider/model format
+```
+
+Env vars are automatically forwarded to provider-specific vars (e.g. `DATABRICKS_API_KEY`, `ANTHROPIC_API_KEY`).
+
+**DeepSeek** (`backend="deepseek"`):
+
+```
+LLM_INTERACTION_BACKEND=deepseek
+LLM_INTERACTION_API_KEY=your-deepseek-key
+LLM_INTERACTION_MODEL=deepseek-chat
+```
+
+Uses the Chat Completions API (full message history is resent each turn).
+
+**Local** (`backend="local"`):
+
+```
+LLM_INTERACTION_BACKEND=local
+LLM_INTERACTION_ENDPOINT=http://localhost:8080/v1   # optional, this is the default
+LLM_INTERACTION_MODEL=my-model
+```
+
+No API key required. Uses the Responses API (`/v1/responses`) which llama-server supports natively.
 
 ## License
 

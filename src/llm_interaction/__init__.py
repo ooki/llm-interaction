@@ -1,6 +1,6 @@
 """
-llm-interaction — Async OpenAI Responses API client with typed tool calling,
-lazy output parsing, and Azure/Databricks backends.
+llm-interaction — Async multi-provider LLM client with typed tool calling,
+lazy output parsing, and Azure/Databricks/OpenRouter/LiteLLM/DeepSeek/local backends.
 
 Usage::
 
