@@ -8,7 +8,6 @@ import pytest
 
 from llm_interaction.client import _forward_litellm_env
 
-
 # ---------------------------------------------------------------------------
 # _forward_litellm_env
 # ---------------------------------------------------------------------------
@@ -162,7 +161,6 @@ class TestLLMInteractionLitellmInit:
                     backend="litellm",
                 )
 
-        import os
 
         # The key should have been forwarded during init
         # (env is still patched within the with block, but we check the model)
@@ -181,14 +179,12 @@ class TestLLMInteractionLitellmInit:
         try:
             with patch.dict(
                 "os.environ", {"LLM_INTERACTION_MODEL": "anthropic/claude"}, clear=True
+            ), patch(
+                "builtins.__import__", side_effect=_import_without_litellm
+            ), pytest.raises(
+                ImportError, match="pip install llm-interaction\\[litellm\\]"
             ):
-                with patch(
-                    "builtins.__import__", side_effect=_import_without_litellm
-                ):
-                    with pytest.raises(
-                        ImportError, match="pip install llm-interaction\\[litellm\\]"
-                    ):
-                        LLMInteraction(prompt_dir=tmp_path, backend="litellm")
+                LLMInteraction(prompt_dir=tmp_path, backend="litellm")
         finally:
             sys.modules.update(hidden)
 
@@ -219,9 +215,8 @@ class TestLLMInteractionLitellmInit:
 
         with patch.dict(
             "os.environ", {"LLM_INTERACTION_MODEL": "m"}, clear=True
-        ):
-            with pytest.raises(ValueError, match="litellm"):
-                LLMInteraction(prompt_dir=tmp_path, backend="gcp")
+        ), pytest.raises(ValueError, match="litellm"):
+            LLMInteraction(prompt_dir=tmp_path, backend="gcp")
 
 
 # ---------------------------------------------------------------------------

@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "llm-interaction"
-version = "0.1.4"
+version = "0.1.5"
 description = "Async multi-provider LLM client with typed tool calling, lazy output parsing, and Azure/Databricks/OpenRouter/LiteLLM/DeepSeek/local backends"
 readme = "README.md"
 license = "MIT"
@@ -36,7 +36,55 @@ litellm = [
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
+    "ruff>=0.5",
+    "mypy>=1.0",
 ]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/llm_interaction"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "C4"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/test_integration*.py" = ["E402", "E501"]
+"tests/test_databricks.py" = ["E501"]
+"tests/*.py" = ["SIM117"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["llm_interaction"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = false
+warn_return_any = true
+warn_unused_configs = true
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "llm_interaction.tool"
+disable_error_code = ["no-any-return"]
+
+[[tool.mypy.overrides]]
+module = "llm_interaction.parsing"
+disable_error_code = ["no-any-return"]
+
+[[tool.mypy.overrides]]
+module = "llm_interaction.client"
+disable_error_code = ["no-any-return", "union-attr", "arg-type", "operator"]
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "databricks.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "litellm"
+ignore_missing_imports = true

@@ -1,6 +1,5 @@
 """Tests for ChatCompletionsBackend: format conversion, multi-turn history, and retry."""
 
-import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -12,7 +11,6 @@ from llm_interaction.backend import (
     _input_items_to_messages,
     _responses_tools_to_chat,
 )
-
 
 # ---------------------------------------------------------------------------
 # Tool schema conversion
@@ -297,6 +295,8 @@ class TestChatCompletionsBackend:
             tools=tools,
             previous_response_id=first_id,
         )
+        assert result2 is not None
+        assert result2.id != first_id
 
         # The second call should have the full history
         second_call_kwargs = client.chat.completions.create.call_args[1]

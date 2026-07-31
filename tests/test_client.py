@@ -324,3 +324,64 @@ class TestSyncMethods:
         assert isinstance(result, AgentResult)
         assert result.stop_reason == "stop_tool"
         assert result.tool_call_count == 1
+
+
+class TestLastCall:
+    @pytest.mark.asyncio
+    async def test_last_call_none_before_query(self, llm):
+        """last_call returns None before any API call is made."""
+        assert llm.last_call is None
+
+    @pytest.mark.asyncio
+    async def test_last_call_after_query(self, llm):
+        """last_call contains request kwargs and raw response after a query."""
+        mock_response = MagicMock()
+        mock_response.output = [
+            MagicMock(type="message", content=[MagicMock(text="Hello!")])
+        ]
+        mock_response.id = "resp_123"
+
+        llm._client = MagicMock()
+        llm._client.responses = MagicMock()
+        llm._client.responses.create = AsyncMock(return_value=mock_response)
+
+        await llm.query(system="Be helpful", user="Hi")
+
+        details = llm.last_call
+        assert details is not None
+        assert "request" in details
+        assert "response" in details
+        assert details["request"]["model"] == "gpt-4o"
+        assert details["request"]["input"] == [
+            {"role": "system", "content": "Be helpful"},
+            {"role": "user", "content": "Hi"},
+        ]
+        assert details["response"] is mock_response
+
+    @pytest.mark.asyncio
+    async def test_last_call_captures_tools_and_previous_id(self, llm):
+        """last_call request includes tools and previous_response_id when used."""
+        mock_response = MagicMock()
+        mock_response.output = [
+            MagicMock(type="message", content=[MagicMock(text="Done")])
+        ]
+        mock_response.id = "resp_456"
+
+        llm._client = MagicMock()
+        llm._client.responses = MagicMock()
+        llm._client.responses.create = AsyncMock(return_value=mock_response)
+
+        @tool
+        def search(query: str) -> str:
+            """Search for something."""
+            return "result"
+
+        await llm.query(
+            system="S", user="U",
+            tools=[search],
+        )
+
+        details = llm.last_call
+        assert details is not None
+        assert "tools" in details["request"]
+        assert details["request"]["tools"][0]["name"] == "search"

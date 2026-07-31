@@ -3,7 +3,6 @@
 from llm_interaction import ToolContext, ToolDef, tool
 from llm_interaction._schema import _parse_google_docstring_args, _python_type_to_json_schema
 
-
 # ---------------------------------------------------------------------------
 # @tool decorator
 # ---------------------------------------------------------------------------

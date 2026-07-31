@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 from typing import Any, get_args, get_origin
 
-
 # Type mapping: Python type → JSON Schema type string
 _TYPE_MAP: dict[type, str] = {
     int: "integer",

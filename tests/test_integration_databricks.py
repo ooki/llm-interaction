@@ -11,7 +11,6 @@ Authenticate first if running off-site:
 """
 
 import os
-from pathlib import Path
 
 from dotenv import load_dotenv
 

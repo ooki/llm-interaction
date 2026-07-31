@@ -1,8 +1,6 @@
 """Tests for local backend initialization (llama-server)."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 from llm_interaction.backend import ResponsesBackend
 
@@ -39,6 +37,7 @@ class TestLLMInteractionLocalInit:
                     prompt_dir=tmp_path,
                     backend="local",
                 )
+                assert llm.model == "my-model"
 
         mock_aoai.assert_called_once_with(
             api_key="no-key",
@@ -59,6 +58,7 @@ class TestLLMInteractionLocalInit:
                     prompt_dir=tmp_path,
                     backend="local",
                 )
+                assert llm.model == "llama3"
 
         mock_aoai.assert_called_once_with(
             api_key="no-key",

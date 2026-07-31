@@ -317,6 +317,20 @@ LLM_INTERACTION_MODEL=my-model
 
 No API key required. Uses the Responses API (`/v1/responses`) which llama-server supports natively.
 
+## Debugging
+
+Each API call stores the request kwargs and raw response for inspection:
+
+```python
+details = llm.last_call
+if details:
+    print(details["request"])   # {model, input, tools, ...}
+    print(details["response"])  # raw SDK response object
+    print(details["response"].usage)  # token counts, etc.
+```
+
+Returns `None` if no call has been made yet.
+
 ## License
 
 MIT

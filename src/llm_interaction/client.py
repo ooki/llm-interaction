@@ -7,13 +7,12 @@ import asyncio
 import json
 import logging
 import os
-import random
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import jinja2
 import json_repair
-import openai
 from openai import AsyncOpenAI, OpenAI
 
 from llm_interaction.backend import (
@@ -62,7 +61,7 @@ def _inject_context(
     kwargs = dict(llm_args)
     for param_name, required_type in tool_def.context_params.items():
         matched = None
-        for ctx_type, ctx_obj in ctx_map.items():
+        for _ctx_type, ctx_obj in ctx_map.items():
             if required_type is not None and isinstance(ctx_obj, required_type):
                 matched = ctx_obj
                 break
@@ -72,8 +71,9 @@ def _inject_context(
                 break
 
         if matched is None:
+            type_name = required_type.__name__ if required_type else "?"
             raise RuntimeError(
-                f"Tool '{tool_def.name}' requires ToolContext[{required_type.__name__ if required_type else '?'}] "
+                f"Tool '{tool_def.name}' requires ToolContext[{type_name}] "
                 f"but no matching context was provided."
             )
         kwargs[param_name] = ToolContext(matched)
@@ -301,6 +301,24 @@ class LLMInteraction:
         if self._backend_impl is not None and hasattr(self._backend_impl, 'client'):
             self._backend_impl.client = value
 
+    @property
+    def last_call(self) -> dict[str, Any] | None:
+        """Return debugging details for the most recent API call.
+
+        Returns a dict with ``request`` (the kwargs sent to the provider)
+        and ``response`` (the raw SDK response object), or ``None`` if no
+        call has been made yet.  Useful for inspecting token usage, model
+        info, finish reasons, and the exact payload that was sent.
+        """
+        backend = self._backend_impl
+        if backend is None:
+            return None
+        request = getattr(backend, "_last_request", None)
+        response = getattr(backend, "_last_response", None)
+        if request is None and response is None:
+            return None
+        return {"request": request, "response": response}
+
     def _init_azure(self, api_key: str | None, endpoint: str | None) -> None:
         """Initialize the Azure OpenAI backend."""
         resolved_key = api_key or os.getenv("LLM_INTERACTION_API_KEY")
@@ -331,11 +349,11 @@ class LLMInteraction:
         """Initialize the Databricks backend via WorkspaceClient."""
         try:
             from databricks.sdk import WorkspaceClient
-        except ImportError:
+        except ImportError as err:
             raise ImportError(
                 "Databricks backend requires the databricks-sdk package.\n"
                 "Install it with: pip install llm-interaction[databricks]"
-            )
+            ) from err
 
         resolved_host = databricks_host or os.getenv("LLM_INTERACTION_DATABRICKS_HOST")
         kwargs: dict[str, str] = {}
@@ -402,11 +420,11 @@ class LLMInteraction:
         """
         try:
             import litellm as _litellm
-        except ImportError:
+        except ImportError as err:
             raise ImportError(
                 "LiteLLM backend requires the litellm package.\n"
                 "Install it with: pip install llm-interaction[litellm]"
-            )
+            ) from err
 
         self._litellm = _litellm
         self._litellm_kwargs: dict[str, str] = {}
@@ -513,13 +531,13 @@ class LLMInteraction:
         try:
             token = _resolve_databricks_token(self._workspace_client)
             self._client.api_key = token
-        except RuntimeError:
+        except RuntimeError as err:
             host = self._workspace_client.config.host or "<unknown>"
             raise RuntimeError(
                 f"Databricks token refresh failed for {host}.\n"
                 f"Your session may have expired. Re-authenticate with:\n"
                 f"  databricks auth login --host {host}"
-            )
+            ) from err
 
     async def _call_api(
         self,

@@ -1,6 +1,6 @@
 """Tests for Databricks backend: client construction, token resolution, and error handling."""
 
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -72,6 +72,7 @@ class TestLLMInteractionDatabricksInit:
     def test_databricks_init_with_host_kwarg(self, tmp_path):
         """Databricks backend initializes with host kwarg."""
         import sys
+
         from llm_interaction import LLMInteraction
 
         w = self._make_workspace_mock()
@@ -101,6 +102,7 @@ class TestLLMInteractionDatabricksInit:
     def test_databricks_init_with_env_var(self, tmp_path):
         """Databricks backend reads host from LLM_INTERACTION_DATABRICKS_HOST."""
         import sys
+
         from llm_interaction import LLMInteraction
 
         w = MagicMock()
@@ -131,6 +133,7 @@ class TestLLMInteractionDatabricksInit:
     def test_databricks_init_pat_token(self, tmp_path):
         """PAT token path works (config.token is set)."""
         import sys
+
         from llm_interaction import LLMInteraction
 
         w = self._make_workspace_mock(token="dapi-static-pat")
@@ -145,6 +148,7 @@ class TestLLMInteractionDatabricksInit:
                         backend="databricks",
                         databricks_host="https://ws.azuredatabricks.net",
                     )
+                    assert llm.model == "m"
 
         mock_aoai.assert_called_once_with(
             api_key="dapi-static-pat",
@@ -154,6 +158,7 @@ class TestLLMInteractionDatabricksInit:
     def test_databricks_missing_sdk_raises(self, tmp_path):
         """Missing databricks-sdk gives clear install hint."""
         import sys
+
         from llm_interaction import LLMInteraction
 
         # Remove databricks.sdk from modules to simulate it not being installed
@@ -183,6 +188,7 @@ class TestDatabricksTokenRefresh:
     def test_refresh_updates_client_api_key(self, tmp_path):
         """_refresh_databricks_token updates the client's api_key."""
         import sys
+
         from llm_interaction import LLMInteraction
 
         w = MagicMock()
@@ -231,6 +237,7 @@ class TestDatabricksTokenRefresh:
     def test_refresh_expired_token_raises_with_hint(self, tmp_path):
         """Expired token raises RuntimeError with re-auth hint."""
         import sys
+
         from llm_interaction import LLMInteraction
 
         w = MagicMock()

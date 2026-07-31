@@ -9,13 +9,13 @@ Three concrete backends:
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import random
 import uuid
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from types import SimpleNamespace
-from typing import Any, Callable
+from typing import Any
 
 import openai
 from openai import AsyncOpenAI
@@ -80,6 +80,8 @@ class ResponsesBackend(Backend):
         self._model = model
         self._max_retries = max_retries
         self._token_refresher = token_refresher
+        self._last_request: dict[str, Any] | None = None
+        self._last_response: Any = None
 
     @property
     def client(self) -> AsyncOpenAI:
@@ -111,6 +113,8 @@ class ResponsesBackend(Backend):
         for attempt in range(self._max_retries):
             try:
                 response = await self._client.responses.create(**kwargs)
+                self._last_request = kwargs
+                self._last_response = response
                 return BackendResult(output=response.output, response_id=response.id)
             except (
                 openai.APIError,
@@ -142,8 +146,10 @@ class ResponsesBackend(Backend):
 def _responses_tools_to_chat(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Convert Responses API tool schemas to Chat Completions format.
 
-    Responses API: ``{"type": "function", "name": ..., "description": ..., "parameters": ...}``
-    Chat Completions: ``{"type": "function", "function": {"name": ..., "description": ..., "parameters": ...}}``
+    Responses API:
+      ``{"type": "function", "name": ..., "description": ..., "parameters": ...}``
+    Chat Completions:
+      ``{"type": "function", "function": {"name": ..., "description": ..., "parameters": ...}}``
     """
     chat_tools = []
     for t in tools:
@@ -226,8 +232,9 @@ class ChatCompletionsBackend(Backend):
         self._client = client
         self._model = model
         self._max_retries = max_retries
-        # Accumulated message history keyed by synthetic response ID
         self._history: dict[str, list[dict[str, Any]]] = {}
+        self._last_request: dict[str, Any] | None = None
+        self._last_response: Any = None
 
     @property
     def client(self) -> AsyncOpenAI:
@@ -308,6 +315,8 @@ class ChatCompletionsBackend(Backend):
         messages.append(assistant_msg)
         self._history[response_id] = messages
 
+        self._last_request = kwargs
+        self._last_response = response
         return BackendResult(output=output, response_id=response_id)
 
 
@@ -330,6 +339,8 @@ class LiteLLMBackend(Backend):
         self._model = model
         self._max_retries = max_retries
         self._extra_kwargs = extra_kwargs or {}
+        self._last_request: dict[str, Any] | None = None
+        self._last_response: Any = None
 
     async def call(
         self,
@@ -351,6 +362,8 @@ class LiteLLMBackend(Backend):
         for attempt in range(self._max_retries):
             try:
                 response = await self._litellm.aresponses(**kwargs)
+                self._last_request = kwargs
+                self._last_response = response
                 return BackendResult(output=response.output, response_id=response.id)
             except Exception as e:
                 last_exc = e

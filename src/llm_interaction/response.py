@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ValidationError
 
@@ -35,7 +35,7 @@ class LLMResponse:
         self,
         text: str,
         response_id: str,
-        _client: "LLMInteraction | None" = None,
+        _client: LLMInteraction | None = None,
     ):
         self.text = text
         self.response_id = response_id

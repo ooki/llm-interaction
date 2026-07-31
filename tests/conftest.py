@@ -1,7 +1,8 @@
 """Shared fixtures for llm_interaction tests."""
 
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 from llm_interaction import LLMInteraction
 

@@ -13,16 +13,14 @@ Example env setup for Databricks Claude:
 """
 
 import os
-from pathlib import Path
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
 import pytest
-from pydantic import BaseModel
 
-from llm_interaction import LLMInteraction, ToolContext, tool
+from llm_interaction import LLMInteraction, tool
 
 _MODEL = os.getenv("LLM_INTERACTION_MODEL", "")
 

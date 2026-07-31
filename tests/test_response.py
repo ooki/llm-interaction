@@ -1,9 +1,8 @@
 """Tests for LLMResponse lazy parsing and AgentResult."""
 
-import asyncio
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from llm_interaction import LLMResponse
 
@@ -77,5 +76,5 @@ class TestLLMResponseParse:
     async def test_parse_invalid_no_retries_raises(self):
         text = '```json\n{"topics": "not_a_list"}\n```'
         resp = LLMResponse(text=text, response_id="r1")
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             await resp.parse(TopicResult, max_retries=0)

@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import inspect
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Generic, TypeVar, get_args, get_origin, get_type_hints
+from typing import Any, Generic, TypeVar, get_args, get_origin, get_type_hints
 
 from llm_interaction._schema import _parse_google_docstring_args, _python_type_to_json_schema
 
@@ -35,18 +36,14 @@ class ToolContext(Generic[T]):
 def _is_tool_context(annotation: Any) -> bool:
     """Check if an annotation is ToolContext[X]."""
     origin = get_origin(annotation)
-    if origin is ToolContext:
-        return True
-    if annotation is ToolContext:
-        return True
-    return False
+    return origin is ToolContext or annotation is ToolContext
 
 
 def _get_tool_context_type(annotation: Any) -> type | None:
     """Extract T from ToolContext[T]."""
     args = get_args(annotation)
     if args:
-        return args[0]
+        return args[0]  # type: ignore[no-any-return]
     return None
 
 
@@ -59,7 +56,7 @@ class ToolDef:
     function: Callable
     is_stop: bool
     schema: dict[str, Any]
-    context_params: dict[str, type]  # param_name -> required context type
+    context_params: dict[str, type | None]  # param_name -> required context type
 
 
 def tool(
@@ -97,7 +94,7 @@ def tool(
         # Build schema, separating ToolContext params from LLM params
         properties: dict[str, Any] = {}
         required: list[str] = []
-        context_params: dict[str, type] = {}
+        context_params: dict[str, type | None] = {}
 
         for param_name, param in sig.parameters.items():
             annotation = hints.get(param_name, str)
