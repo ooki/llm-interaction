@@ -46,6 +46,11 @@ Constructor reads env vars: `LLM_INTERACTION_API_KEY`, `LLM_INTERACTION_ENDPOINT
 - `await llm.query(system: str, user: str, tools?, context?, max_tool_calls?) -> LLMResponse`
 - `await llm.query_template(prompt_name: str, variables: dict, tools?, context?, max_tool_calls?) -> LLMResponse`
 - `await llm.agent_loop(system: str, user: str, tools: list[ToolDef], context?, max_tool_calls?, on_tool_call?, previous_response_id?) -> AgentResult`
+- `await llm.agent_loop_template(prompt_name: str, variables: dict, tools: list[ToolDef], context?, max_tool_calls?, on_tool_call?, previous_response_id?) -> AgentResult`
+- `llm.sync_query(system: str, user: str, tools?, context?, max_tool_calls?) -> LLMResponse`
+- `llm.sync_query_template(prompt_name: str, variables: dict, tools?, context?, max_tool_calls?) -> LLMResponse`
+- `llm.sync_agent_loop(system: str, user: str, tools: list[ToolDef], context?, max_tool_calls?, on_tool_call?, previous_response_id?) -> AgentResult`
+- `llm.sync_agent_loop_template(prompt_name: str, variables: dict, tools: list[ToolDef], context?, max_tool_calls?, on_tool_call?, previous_response_id?) -> AgentResult`
 - `llm.render(template_name: str, variables: dict) -> str`
 
 ### LLMResponse

@@ -85,6 +85,26 @@ def _inject_context(
 # ---------------------------------------------------------------------------
 
 
+def _run_sync(coro):
+    """Run a coroutine synchronously.
+
+    Raises a clear error if an event loop is already running (e.g. inside a
+    Jupyter notebook or another async function), pointing users to the async
+    variant or to ``nest-asyncio``.
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    raise RuntimeError(
+        "Cannot call sync methods from within a running event loop. "
+        "Use the async version instead (e.g. `await agent_loop(...)`), or "
+        "install nest-asyncio:\n"
+        "  pip install nest-asyncio\n"
+        "  import nest_asyncio; nest_asyncio.apply()"
+    )
+
+
 def _resolve_databricks_token(workspace_client: Any) -> str:
     """Extract bearer token from a Databricks WorkspaceClient.
 
@@ -699,7 +719,7 @@ class LLMInteraction:
         Returns:
             LLMResponse with lazy parsing methods.
         """
-        return asyncio.run(
+        return _run_sync(
             self.query(system, user, tools, context, max_tool_calls)
         )
 
@@ -726,7 +746,7 @@ class LLMInteraction:
         Returns:
             LLMResponse with lazy parsing methods.
         """
-        return asyncio.run(
+        return _run_sync(
             self.query_template(prompt_name, variables, tools, context, max_tool_calls)
         )
 
@@ -759,13 +779,95 @@ class LLMInteraction:
         Returns:
             AgentResult with tool call count, stop reason, and response ID.
         """
-        return asyncio.run(
+        return _run_sync(
             self.agent_loop(
                 system, user, tools, context, max_tool_calls, on_tool_call, previous_response_id
             )
         )
 
+    def sync_agent_loop_template(
+        self,
+        prompt_name: str,
+        variables: dict[str, Any],
+        tools: list[ToolDef],
+        context: list[Any] | Any | None = None,
+        max_tool_calls: int = 50,
+        on_tool_call: Callable[[int, str, dict, Any], None] | None = None,
+        previous_response_id: str | None = None,
+    ) -> AgentResult:
+        """Synchronous wrapper for agent_loop_template(). Useful in notebooks.
+
+        Looks for ``{prompt_name}_system.jinja`` and
+        ``{prompt_name}_user.jinja`` in the prompt directory.
+
+        The loop continues until:
+        - The LLM responds with content (no tool calls)
+        - A tool marked ``stop=True`` is called
+        - ``max_tool_calls`` is reached
+
+        Args:
+            prompt_name: Template name prefix.
+            variables: Variables for template rendering.
+            tools: @tool-decorated functions.
+            context: Objects to inject into ToolContext parameters.
+            max_tool_calls: Maximum total tool calls.
+            on_tool_call: Optional callback(index, name, args, result).
+            previous_response_id: Continue from a previous response.
+
+        Returns:
+            AgentResult with tool call count, stop reason, and response ID.
+        """
+        return _run_sync(
+            self.agent_loop_template(
+                prompt_name, variables, tools, context, max_tool_calls,
+                on_tool_call, previous_response_id,
+            )
+        )
+
     # -- agent_loop ---------------------------------------------------------
+
+    async def agent_loop_template(
+        self,
+        prompt_name: str,
+        variables: dict[str, Any],
+        tools: list[ToolDef],
+        context: list[Any] | Any | None = None,
+        max_tool_calls: int = 50,
+        on_tool_call: Callable[[int, str, dict, Any], None] | None = None,
+        previous_response_id: str | None = None,
+    ) -> AgentResult:
+        """Render Jinja templates and run an agentic tool-calling loop.
+
+        Looks for ``{prompt_name}_system.jinja`` and
+        ``{prompt_name}_user.jinja`` in the prompt directory.
+
+        The loop continues until:
+        - The LLM responds with content (no tool calls)
+        - A tool marked ``stop=True`` is called
+        - ``max_tool_calls`` is reached
+
+        Args:
+            prompt_name: Template name prefix.
+            variables: Variables for template rendering.
+            tools: @tool-decorated functions.
+            context: Objects to inject into ToolContext parameters.
+            max_tool_calls: Maximum total tool calls.
+            on_tool_call: Optional callback(index, name, args, result).
+            previous_response_id: Continue from a previous response.
+
+        Returns:
+            AgentResult with tool call count, stop reason, and response ID.
+        """
+        prompts = self._render_prompt(prompt_name, variables)
+        return await self.agent_loop(
+            system=prompts["system"],
+            user=prompts["user"],
+            tools=tools,
+            context=context,
+            max_tool_calls=max_tool_calls,
+            on_tool_call=on_tool_call,
+            previous_response_id=previous_response_id,
+        )
 
     async def agent_loop(
         self,

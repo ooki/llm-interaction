@@ -251,6 +251,42 @@ class TestAgentLoop:
         assert calls_log[0][1] == "done"
         assert calls_log[0][2] == {"x": 1}
 
+    @pytest.mark.asyncio
+    async def test_agent_loop_template(self, llm):
+        """agent_loop_template() renders templates and delegates to agent_loop()."""
+
+        @tool(stop=True)
+        def finish(answer: str) -> str:
+            """Submit final answer."""
+            return "done"
+
+        tool_call_response = MagicMock()
+        tool_call_response.output = [
+            SimpleNamespace(
+                type="function_call",
+                call_id="call_1",
+                name="finish",
+                arguments='{"answer": "42"}',
+            )
+        ]
+        tool_call_response.id = "resp_1"
+
+        llm._client = MagicMock()
+        llm._client.responses = MagicMock()
+        llm._client.responses.create = AsyncMock(return_value=tool_call_response)
+
+        with patch.object(llm, "_render_prompt", wraps=llm._render_prompt) as spy:
+            result = await llm.agent_loop_template(
+                prompt_name="test",
+                variables={"topic": "AI", "question": "What?"},
+                tools=[finish],
+            )
+
+        spy.assert_called_once_with("test", {"topic": "AI", "question": "What?"})
+        assert isinstance(result, AgentResult)
+        assert result.stop_reason == "stop_tool"
+        assert result.tool_call_count == 1
+
 
 class TestSyncMethods:
     def test_sync_query(self, llm):
@@ -324,6 +360,48 @@ class TestSyncMethods:
         assert isinstance(result, AgentResult)
         assert result.stop_reason == "stop_tool"
         assert result.tool_call_count == 1
+
+    def test_sync_agent_loop_template(self, llm):
+        """sync_agent_loop_template() renders templates and runs agent_loop()."""
+
+        @tool(stop=True)
+        def finish(answer: str) -> str:
+            """Submit final answer."""
+            return "done"
+
+        tool_call_response = MagicMock()
+        tool_call_response.output = [
+            SimpleNamespace(
+                type="function_call",
+                call_id="call_1",
+                name="finish",
+                arguments='{"answer": "42"}',
+            )
+        ]
+        tool_call_response.id = "resp_1"
+
+        llm._client = MagicMock()
+        llm._client.responses = MagicMock()
+        llm._client.responses.create = AsyncMock(return_value=tool_call_response)
+
+        with patch.object(llm, "_render_prompt", wraps=llm._render_prompt) as spy:
+            result = llm.sync_agent_loop_template(
+                prompt_name="test",
+                variables={"topic": "AI", "question": "What?"},
+                tools=[finish],
+            )
+
+        spy.assert_called_once_with("test", {"topic": "AI", "question": "What?"})
+        assert isinstance(result, AgentResult)
+        assert result.stop_reason == "stop_tool"
+        assert result.tool_call_count == 1
+
+    @pytest.mark.filterwarnings("ignore:coroutine.*never awaited:RuntimeWarning")
+    @pytest.mark.asyncio
+    async def test_sync_raises_in_async_context(self, llm):
+        """Sync wrappers raise a clear error when called from an async context."""
+        with pytest.raises(RuntimeError, match="Cannot call sync methods"):
+            llm.sync_query(system="S", user="U")
 
 
 class TestLastCall:

@@ -92,6 +92,14 @@ result = llm.sync_agent_loop(
     tools=[submit_answer],
 )
 print(f"Tool calls: {result.tool_call_count}, Reason: {result.stop_reason}")
+
+# Or with templates
+result = llm.sync_agent_loop_template(
+    prompt_name="math",
+    variables={"problem": "What is 2+2?"},
+    tools=[submit_answer],
+)
+print(f"Tool calls: {result.tool_call_count}, Reason: {result.stop_reason}")
 ```
 
 ### Async
@@ -112,6 +120,27 @@ result = await llm.query_template(
     variables={"name": "Alice"},
 )
 print(result.text)
+
+# Or run an agentic loop
+from llm_interaction import tool
+
+@tool(stop=True)
+def submit_answer(answer: str) -> str:
+    """Submit the final answer."""
+    return "done"
+
+result = await llm.agent_loop(
+    system="You are a helpful assistant.",
+    user="What is 2+2?",
+    tools=[submit_answer],
+)
+
+# Or with templates
+result = await llm.agent_loop_template(
+    prompt_name="math",
+    variables={"problem": "What is 2+2?"},
+    tools=[submit_answer],
+)
 ```
 
 ## Output Parsing
