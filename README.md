@@ -143,6 +143,59 @@ result = await llm.agent_loop_template(
 )
 ```
 
+## Streaming
+
+`agent_loop_streaming()` returns a `StreamAgentLoop` that yields events in real time
+as the LLM responds and tools execute. Supported on all backends except LiteLLM.
+
+```python
+from llm_interaction import LLMInteraction, tool
+from llm_interaction import StreamTextDelta, StreamToolCall, StreamToolResult
+
+@tool
+def search(query: str) -> str:
+    """Search the web. Args: query: The search query."""
+    return f"Results for: {query}"
+
+@tool(stop=True)
+def finish(answer: str) -> str:
+    """Submit the final answer. Args: answer: The final answer."""
+    return answer
+
+# Display progress in real time, then get the result
+stream = llm.agent_loop_streaming(
+    system="You are a research assistant.",
+    user="What's the capital of France?",
+    tools=[search, finish],
+)
+
+async for event in stream:
+    match event:
+        case StreamTextDelta(text):
+            print(text, end="", flush=True)
+        case StreamToolCall(name=name, arguments=args):
+            print(f"\n→ {name}({args})")
+        case StreamToolResult(name=name, result=result):
+            print(f"← {result}")
+
+result = stream.result  # AgentResult(stop_reason=..., tool_call_count=...)
+
+# Or skip display, just get the final result
+result = await llm.agent_loop_streaming(
+    system="You are a helpful assistant.",
+    user="What is 2+2?",
+    tools=[finish],
+).collect()
+```
+
+**StreamEvent types:**
+
+| Event | Fields | When |
+|-------|--------|------|
+| `StreamTextDelta` | `text: str` | Model emits a text chunk (includes reasoning before tool calls) |
+| `StreamToolCall` | `call_id: str, name: str, arguments: dict` | Model requests a complete tool (backend buffers argument deltas) |
+| `StreamToolResult` | `call_id: str, name: str, result: Any` | Tool execution finished |
+
 ## Output Parsing
 
 Both `query()` and `sync_query()` return an `LLMResponse`. Parsing is lazy — call the method you need:

@@ -8,6 +8,7 @@
 
 ```python
 from llm_interaction import LLMInteraction, tool, ToolContext, ToolDef, LLMResponse, AgentResult
+from llm_interaction import StreamAgentLoop, StreamEvent, StreamTextDelta, StreamToolCall, StreamToolResult
 ```
 
 ### LLMInteraction
@@ -51,6 +52,8 @@ Constructor reads env vars: `LLM_INTERACTION_API_KEY`, `LLM_INTERACTION_ENDPOINT
 - `llm.sync_query_template(prompt_name: str, variables: dict, tools?, context?, max_tool_calls?) -> LLMResponse`
 - `llm.sync_agent_loop(system: str, user: str, tools: list[ToolDef], context?, max_tool_calls?, on_tool_call?, previous_response_id?) -> AgentResult`
 - `llm.sync_agent_loop_template(prompt_name: str, variables: dict, tools: list[ToolDef], context?, max_tool_calls?, on_tool_call?, previous_response_id?) -> AgentResult`
+- `llm.agent_loop_streaming(system: str, user: str, tools: list[ToolDef], context?, max_tool_calls?, on_tool_call?, previous_response_id?) -> StreamAgentLoop`
+- `llm.agent_loop_streaming_template(prompt_name: str, variables: dict, tools: list[ToolDef], context?, max_tool_calls?, on_tool_call?, previous_response_id?) -> StreamAgentLoop`
 - `llm.render(template_name: str, variables: dict) -> str`
 
 ### LLMResponse
@@ -70,6 +73,49 @@ Returned by `agent_loop()`. Fields:
 - `stop_reason: str` — `"content"`, `"stop_tool"`, or `"max_calls"`
 - `final_content: str | None`
 - `response_id: str`
+
+### StreamAgentLoop
+
+Returned by `agent_loop_streaming()` and `agent_loop_streaming_template()`.
+Async-iterable that yields `StreamEvent` items in real time. After iteration,
+`.result` provides the final `AgentResult`, or call `await .collect()` to drain
+silently and return the result.
+
+**StreamEvent types:**
+
+| Event | Fields | Description |
+|-------|--------|-------------|
+| `StreamTextDelta` | `text: str` | Text chunk from the model |
+| `StreamToolCall` | `call_id: str` `name: str` `arguments: dict` | Complete tool call (backend buffers argument deltas) |
+| `StreamToolResult` | `call_id: str` `name: str` `result: Any` | Result of executing a tool |
+
+**Usage:**
+
+```python
+stream = llm.agent_loop_streaming(
+    system="You are a helpful assistant.",
+    user="What's the capital of France?",
+    tools=[search, finish],
+)
+
+async for event in stream:
+    match event:
+        case StreamTextDelta(text):
+            print(text, end="", flush=True)
+        case StreamToolCall(name=name, arguments=args):
+            print(f"\n→ {name}({args})")
+        case StreamToolResult(name=name, result=result):
+            print(f"← {result}")
+
+result = stream.result  # AgentResult
+
+# Or drain silently — just get AgentResult
+result = await llm.agent_loop_streaming(...).collect()
+```
+
+**Backend support:**
+- Azure, Databricks, OpenRouter, DeepSeek, Local: supported
+- LiteLLM: raises `NotImplementedError`
 
 ### @tool decorator
 
@@ -119,6 +165,6 @@ src/llm_interaction/
 ├── tool.py        # @tool, ToolDef, ToolContext
 ├── _schema.py     # type-to-JSON-Schema, docstring parsing
 ├── parsing.py     # JSON/YAML/scratchpad extraction
-├── response.py    # LLMResponse, AgentResult
-└── client.py      # LLMInteraction, context matching, provider init
+├── response.py    # LLMResponse, AgentResult, StreamAgentLoop, StreamEvent, etc.
+└── client.py      # LLMInteraction, context matching, provider init, streaming agent loop
 ```

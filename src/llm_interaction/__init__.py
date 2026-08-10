@@ -1,6 +1,7 @@
 """
 llm-interaction — Async multi-provider LLM client with typed tool calling,
-lazy output parsing, and Azure/Databricks/OpenRouter/LiteLLM/DeepSeek/local backends.
+lazy output parsing, streaming agent loop, and
+Azure/Databricks/OpenRouter/LiteLLM/DeepSeek/local backends.
 
 Usage::
 
