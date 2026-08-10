@@ -71,8 +71,10 @@ class TestQueryIntegration:
     async def test_scratchpad_json(self, llm):
         result = await llm.query(
             system=(
-                "You are a helpful assistant. First explain your reasoning in plain text, "
-                "then output your answer in a ```json block."
+                "You are a helpful assistant. "
+                "You MUST first write at least one sentence explaining your reasoning. "
+                "Then output your answer in a ```json code block. "
+                "Never output the JSON without reasoning before it."
             ),
             user='What is the capital of Norway? Return {"capital": "..."}',
         )

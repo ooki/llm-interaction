@@ -22,7 +22,14 @@ from llm_interaction.backend import (
     ResponsesBackend,
 )
 from llm_interaction.parsing import _extract_function_calls, _extract_text_from_output
-from llm_interaction.response import AgentResult, LLMResponse
+from llm_interaction.response import (
+    AgentResult,
+    LLMResponse,
+    StreamAgentLoop,
+    StreamTextDelta,
+    StreamToolCall,
+    StreamToolResult,
+)
 from llm_interaction.tool import ToolContext, ToolDef
 
 logger = logging.getLogger(__name__)
@@ -579,6 +586,19 @@ class LLMInteraction:
         """Backward-compat alias — delegates to ``_call_api``."""
         return await self._call_api(input_items, tools, previous_response_id)
 
+    async def _stream_api(
+        self,
+        input_items: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        previous_response_id: str | None = None,
+    ):
+        """Delegate streaming to the backend implementation."""
+
+        async for event in self._backend_impl.stream(
+            input_items, tools, previous_response_id
+        ):
+            yield event
+
     # -- query --------------------------------------------------------------
 
     async def query(
@@ -994,3 +1014,239 @@ class LLMInteraction:
             final_content=None,
             response_id=current_response_id,
         )
+
+    # -- streaming agent loop -------------------------------------------------
+
+    def agent_loop_streaming(
+        self,
+        system: str,
+        user: str,
+        tools: list[ToolDef],
+        context: list[Any] | Any | None = None,
+        max_tool_calls: int = 50,
+        on_tool_call: Callable[[int, str, dict, Any], None] | None = None,
+        previous_response_id: str | None = None,
+    ) -> StreamAgentLoop:
+        """Streaming version of :meth:`agent_loop`.
+
+        Returns a :class:`StreamAgentLoop` that yields :class:`StreamEvent`
+        items as they arrive in real time.  After the stream is exhausted,
+        ``.result`` provides the final :class:`AgentResult`, or call
+        ``await .collect()`` to drain silently.
+
+        Args:
+            system: System prompt.
+            user: User prompt.
+            tools: @tool-decorated functions.
+            context: Objects to inject into ToolContext parameters.
+            max_tool_calls: Maximum total tool calls.
+            on_tool_call: Optional callback(index, name, args, result).
+            previous_response_id: Continue from a previous response.
+
+        Returns:
+            :class:`StreamAgentLoop` — async-iterable with ``.result``
+            and ``.collect()``.
+        """
+        stream = StreamAgentLoop()
+        stream._bind(self._streaming_agent_loop(
+            stream,
+            system=system,
+            user=user,
+            tools=tools,
+            context=context,
+            max_tool_calls=max_tool_calls,
+            on_tool_call=on_tool_call,
+            previous_response_id=previous_response_id,
+        ))
+        return stream
+
+    def agent_loop_streaming_template(
+        self,
+        prompt_name: str,
+        variables: dict[str, Any],
+        tools: list[ToolDef],
+        context: list[Any] | Any | None = None,
+        max_tool_calls: int = 50,
+        on_tool_call: Callable[[int, str, dict, Any], None] | None = None,
+        previous_response_id: str | None = None,
+    ) -> StreamAgentLoop:
+        """Render Jinja templates and run a streaming agent loop.
+
+        Looks for ``{prompt_name}_system.jinja`` and
+        ``{prompt_name}_user.jinja`` in the prompt directory.
+
+        Args:
+            prompt_name: Template name prefix.
+            variables: Variables for template rendering.
+            tools: @tool-decorated functions.
+            context: Objects to inject into ToolContext parameters.
+            max_tool_calls: Maximum total tool calls.
+            on_tool_call: Optional callback(index, name, args, result).
+            previous_response_id: Continue from a previous response.
+
+        Returns:
+            :class:`StreamAgentLoop` — async-iterable with ``.result``
+            and ``.collect()``.
+        """
+        prompts = self._render_prompt(prompt_name, variables)
+        return self.agent_loop_streaming(
+            system=prompts["system"],
+            user=prompts["user"],
+            tools=tools,
+            context=context,
+            max_tool_calls=max_tool_calls,
+            on_tool_call=on_tool_call,
+            previous_response_id=previous_response_id,
+        )
+
+    async def _streaming_agent_loop(
+        self,
+        stream: StreamAgentLoop,
+        *,
+        system: str,
+        user: str,
+        tools: list[ToolDef],
+        context: list[Any] | Any | None,
+        max_tool_calls: int,
+        on_tool_call: Callable[[int, str, dict, Any], None] | None,
+        previous_response_id: str | None,
+    ):
+        from llm_interaction.backend import (
+            _StreamResponseDone,
+            _StreamTextDelta,
+            _StreamToolCallDone,
+        )
+
+        tool_schemas = [t.schema for t in tools]
+        tool_map = {t.name: t for t in tools}
+        ctx_map = _build_context_map(context)
+        current_response_id = previous_response_id
+        tool_call_count = 0
+
+        if current_response_id is None:
+            input_items: list[dict[str, Any]] = [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ]
+        else:
+            input_items = [{"role": "user", "content": user}]
+
+        while tool_call_count < max_tool_calls:
+            had_tool_calls = False
+            accumulated_text: list[str] = []
+            outputs: list[dict[str, Any]] = []
+
+            async for backend_event in self._stream_api(
+                input_items,
+                tools=tool_schemas,
+                previous_response_id=current_response_id,
+            ):
+                if isinstance(backend_event, _StreamTextDelta):
+                    accumulated_text.append(backend_event.text)
+                    yield StreamTextDelta(text=backend_event.text)
+
+                elif isinstance(backend_event, _StreamToolCallDone):
+                    had_tool_calls = True
+                    try:
+                        llm_args = json.loads(
+                            backend_event.arguments or "{}"
+                        )
+                    except json.JSONDecodeError:
+                        llm_args = json.loads(
+                            json_repair.repair_json(backend_event.arguments)
+                        )
+
+                    yield StreamToolCall(
+                        call_id=backend_event.call_id,
+                        name=backend_event.name,
+                        arguments=llm_args,
+                    )
+
+                    tool_def = tool_map.get(backend_event.name)
+                    if tool_def is None:
+                        raise RuntimeError(
+                            f"LLM called unknown tool '{backend_event.name}'"
+                        )
+
+                    full_kwargs = _inject_context(tool_def, llm_args, ctx_map)
+
+                    try:
+                        result = tool_def.function(**full_kwargs)
+                        if asyncio.iscoroutine(result):
+                            result = await result
+                    except Exception as e:
+                        logger.error(
+                            "Tool '%s' raised: %s", tool_def.name, e
+                        )
+                        result = {"error": str(e)}
+
+                    if on_tool_call:
+                        on_tool_call(
+                            tool_call_count,
+                            backend_event.name,
+                            llm_args,
+                            result,
+                        )
+
+                    yield StreamToolResult(
+                        call_id=backend_event.call_id,
+                        name=backend_event.name,
+                        result=result,
+                    )
+
+                    result_str = (
+                        json.dumps(result)
+                        if not isinstance(result, str)
+                        else result
+                    )
+                    outputs.append({
+                        "type": "function_call_output",
+                        "call_id": backend_event.call_id,
+                        "output": result_str,
+                    })
+
+                    tool_call_count += 1
+
+                    if tool_call_count >= max_tool_calls:
+                        stream._result = AgentResult(
+                            tool_call_count=tool_call_count,
+                            stop_reason="max_calls",
+                            final_content=None,
+                            response_id=current_response_id or "",
+                        )
+                        stream._drained = True
+                        return
+
+                    if tool_def.is_stop:
+                        stream._result = AgentResult(
+                            tool_call_count=tool_call_count,
+                            stop_reason="stop_tool",
+                            final_content=None,
+                            response_id=current_response_id or "",
+                        )
+                        stream._drained = True
+                        return
+
+                elif isinstance(backend_event, _StreamResponseDone):
+                    current_response_id = backend_event.response_id
+
+            if not had_tool_calls:
+                final_text = "".join(accumulated_text)
+                stream._result = AgentResult(
+                    tool_call_count=tool_call_count,
+                    stop_reason="content",
+                    final_content=final_text,
+                    response_id=current_response_id or "",
+                )
+                stream._drained = True
+                return
+
+            input_items = outputs
+
+        stream._result = AgentResult(
+            tool_call_count=tool_call_count,
+            stop_reason="max_calls",
+            final_content=None,
+            response_id=current_response_id or "",
+        )
+        stream._drained = True

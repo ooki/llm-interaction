@@ -1,11 +1,12 @@
-"""LLMResponse and AgentResult data types."""
+"""LLMResponse, AgentResult, and streaming event data types."""
 
 from __future__ import annotations
 
 import json
 import logging
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ValidationError
 
@@ -134,3 +135,84 @@ class AgentResult:
     stop_reason: str  # "content" | "stop_tool" | "max_calls"
     final_content: str | None
     response_id: str
+
+
+# ---------------------------------------------------------------------------
+# Streaming types
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class StreamTextDelta:
+    """A chunk of streaming text from the model.
+
+    During agent loop streaming, text deltas appear in natural
+    order — reasoning (scratchpad) before tool calls is included.
+    """
+
+    text: str
+
+
+@dataclass
+class StreamToolCall:
+    """A complete tool call requested by the model.
+
+    Backend buffers argument deltas internally, so you receive the
+    full, parseable call.
+    """
+
+    call_id: str
+    name: str
+    arguments: dict[str, Any]
+
+
+@dataclass
+class StreamToolResult:
+    """Result of executing a tool call."""
+
+    call_id: str
+    name: str
+    result: Any
+
+
+StreamEvent = StreamTextDelta | StreamToolCall | StreamToolResult
+
+
+class StreamAgentLoop:
+    """Async iterable returned by ``agent_loop_streaming()``.
+
+    Iterate to receive :class:`StreamEvent` items in real time.
+    After iteration the ``.result`` property holds the final
+    :class:`AgentResult`.  Call ``await .collect()`` to drain
+    the stream silently and return the result directly.
+    """
+
+    def __init__(self) -> None:
+        self._generator: AsyncIterator[StreamEvent] | None = None
+        self._result: AgentResult | None = None
+        self._drained: bool = False
+
+    def _bind(self, generator: AsyncIterator[StreamEvent]) -> None:
+        self._generator = generator
+
+    def __aiter__(self) -> AsyncIterator[StreamEvent]:
+        if self._generator is None:
+            raise RuntimeError("StreamAgentLoop not bound to a generator.")
+        return self._generator
+
+    @property
+    def result(self) -> AgentResult:
+        """The final :class:`AgentResult` after the stream is exhausted."""
+        if not self._drained or self._result is None:
+            raise RuntimeError(
+                "Stream not yet exhausted. Iterate over events or call .collect() first."
+            )
+        return self._result
+
+    async def collect(self) -> AgentResult:
+        """Drain all events silently and return the final :class:`AgentResult`."""
+        if self._drained and self._result is not None:
+            return self._result
+        async for _ in self:
+            pass
+        return self.result

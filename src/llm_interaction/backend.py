@@ -13,7 +13,8 @@ import logging
 import random
 import uuid
 from abc import ABC, abstractmethod
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
 
@@ -24,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Normalized result — what every backend returns
+# Normalized results
 # ---------------------------------------------------------------------------
 
 
@@ -40,6 +41,29 @@ class BackendResult:
     def __init__(self, output: list[Any], response_id: str):
         self.output = output
         self.id = response_id
+
+
+@dataclass
+class _StreamTextDelta:
+    """Internal: a chunk of streaming text from any backend."""
+    text: str
+
+
+@dataclass
+class _StreamToolCallDone:
+    """Internal: a complete tool call (arguments fully buffered by backend)."""
+    call_id: str
+    name: str
+    arguments: str  # JSON string
+
+
+@dataclass
+class _StreamResponseDone:
+    """Internal: the current response turn has completed."""
+    response_id: str
+
+
+_BackendStreamEvent = _StreamTextDelta | _StreamToolCallDone | _StreamResponseDone
 
 
 # ---------------------------------------------------------------------------
@@ -58,6 +82,16 @@ class Backend(ABC):
         previous_response_id: str | None = None,
     ) -> BackendResult:
         """Make a single API call and return a normalized result."""
+        ...
+
+    @abstractmethod
+    def stream(
+        self,
+        input_items: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        previous_response_id: str | None = None,
+    ) -> AsyncIterator[_BackendStreamEvent]:
+        """Stream a single API response, yielding normalized events."""
         ...
 
 
@@ -136,6 +170,59 @@ class ResponsesBackend(Backend):
         raise RuntimeError(
             f"API call failed after {self._max_retries} retries. Last error: {last_exc}"
         )
+
+    async def stream(
+        self,
+        input_items: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        previous_response_id: str | None = None,
+    ) -> AsyncIterator[_BackendStreamEvent]:
+        if self._token_refresher:
+            self._token_refresher()
+
+        kwargs: dict[str, Any] = {
+            "model": self._model,
+            "input": input_items,
+            "stream": True,
+        }
+        if tools:
+            kwargs["tools"] = tools
+        if previous_response_id:
+            kwargs["previous_response_id"] = previous_response_id
+
+        fc_buffers: dict[str, list[str]] = {}
+
+        response = await self._client.responses.create(**kwargs)
+        self._last_request = kwargs
+
+        async for event in response:
+            event_type: str = getattr(event, "type", "")
+
+            if event_type == "response.output_text.delta":
+                yield _StreamTextDelta(
+                    text=getattr(event, "delta", "") or ""
+                )
+
+            elif event_type == "response.function_call_arguments.delta":
+                item_id: str = getattr(event, "item_id", "")
+                delta: str = getattr(event, "delta", "") or ""
+                fc_buffers.setdefault(item_id, []).append(delta)
+
+            elif event_type == "response.function_call_arguments.done":
+                item_id = getattr(event, "item_id", "")
+                buffered = fc_buffers.pop(item_id, None)
+                full_args = "".join(buffered) if buffered else getattr(event, "arguments", "") or ""
+                yield _StreamToolCallDone(
+                    call_id=getattr(event, "call_id", "") or "",
+                    name=getattr(event, "name", "") or "",
+                    arguments=full_args,
+                )
+
+            elif event_type == "response.completed":
+                response = getattr(event, "response", None)
+                response_id = getattr(response, "id", "") if response else ""
+                self._last_response = event
+                yield _StreamResponseDone(response_id=response_id)
 
 
 # ---------------------------------------------------------------------------
@@ -243,6 +330,94 @@ class ChatCompletionsBackend(Backend):
     @client.setter
     def client(self, value: AsyncOpenAI) -> None:
         self._client = value
+
+    async def stream(
+        self,
+        input_items: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        previous_response_id: str | None = None,
+    ) -> AsyncIterator[_BackendStreamEvent]:
+        if previous_response_id and previous_response_id in self._history:
+            messages = list(self._history[previous_response_id])
+        else:
+            messages = []
+
+        messages.extend(_input_items_to_messages(input_items))
+
+        kwargs: dict[str, Any] = {
+            "model": self._model,
+            "messages": messages,
+            "stream": True,
+        }
+        if tools:
+            kwargs["tools"] = _responses_tools_to_chat(tools)
+
+        tc_buffers: dict[int, dict[str, Any]] = {}
+
+        response = await self._client.chat.completions.create(**kwargs)
+        last_chunk = None
+
+        async for chunk in response:
+            last_chunk = chunk
+            if not getattr(chunk, "choices", None):
+                continue
+
+            choice = chunk.choices[0]
+            delta = choice.delta
+
+            if getattr(delta, "content", None):
+                yield _StreamTextDelta(text=delta.content)
+
+            tool_calls = getattr(delta, "tool_calls", None)
+            if tool_calls:
+                for tc_delta in tool_calls:
+                    idx = tc_delta.index
+                    if idx not in tc_buffers:
+                        tc_buffers[idx] = {
+                            "id": "",
+                            "name": "",
+                            "arguments_parts": [],
+                        }
+                    buf = tc_buffers[idx]
+                    if tc_delta.id:
+                        buf["id"] = tc_delta.id
+                    if tc_delta.function and tc_delta.function.name:
+                        buf["name"] = tc_delta.function.name
+                    if tc_delta.function and tc_delta.function.arguments:
+                        buf["arguments_parts"].append(
+                            tc_delta.function.arguments
+                        )
+
+        # Flush tool calls
+        for idx in sorted(tc_buffers):
+            buf = tc_buffers[idx]
+            yield _StreamToolCallDone(
+                call_id=buf["id"],
+                name=buf["name"],
+                arguments="".join(buf["arguments_parts"]),
+            )
+
+        self._last_request = kwargs
+        self._last_response = last_chunk
+
+        response_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
+        assistant_msg: dict[str, Any] = {"role": "assistant"}
+        if tc_buffers:
+            assistant_msg["tool_calls"] = [
+                {
+                    "id": buf["id"],
+                    "type": "function",
+                    "function": {
+                        "name": buf["name"],
+                        "arguments": "".join(buf["arguments_parts"]),
+                    },
+                }
+                for buf in tc_buffers.values()
+            ]
+        messages.append(assistant_msg)
+        self._history[response_id] = messages
+
+        yield _StreamResponseDone(response_id=response_id)
 
     async def call(
         self,
@@ -382,3 +557,15 @@ class LiteLLMBackend(Backend):
             f"LiteLLM API call failed after {self._max_retries} retries. "
             f"Last error: {last_exc}"
         )
+
+    async def stream(
+        self,
+        input_items: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        previous_response_id: str | None = None,
+    ) -> AsyncIterator[_BackendStreamEvent]:
+        raise NotImplementedError(
+            "LiteLLM streaming is not yet supported. "
+            "Use a different backend for streaming."
+        )
+        yield  # pragma: no cover — makes this an async generator for the type signature

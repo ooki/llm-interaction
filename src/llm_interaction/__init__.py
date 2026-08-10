@@ -8,7 +8,15 @@ Usage::
 """
 
 from llm_interaction.client import LLMInteraction
-from llm_interaction.response import AgentResult, LLMResponse
+from llm_interaction.response import (
+    AgentResult,
+    LLMResponse,
+    StreamAgentLoop,
+    StreamEvent,
+    StreamTextDelta,
+    StreamToolCall,
+    StreamToolResult,
+)
 from llm_interaction.tool import ToolContext, ToolDef, tool
 
 __all__ = [
@@ -18,4 +26,9 @@ __all__ = [
     "ToolContext",
     "ToolDef",
     "tool",
+    "StreamAgentLoop",
+    "StreamEvent",
+    "StreamTextDelta",
+    "StreamToolCall",
+    "StreamToolResult",
 ]

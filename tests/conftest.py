@@ -19,6 +19,7 @@ def llm(tmp_path):
             "LLM_INTERACTION_API_KEY": "test-key",
             "LLM_INTERACTION_ENDPOINT": "https://test.openai.azure.com",
             "LLM_INTERACTION_MODEL": "gpt-4o",
+            "LLM_INTERACTION_BACKEND": "azure",
         },
     ):
         yield LLMInteraction(prompt_dir=tmp_path)

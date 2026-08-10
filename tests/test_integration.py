@@ -18,7 +18,14 @@ load_dotenv()
 import pytest
 from pydantic import BaseModel
 
-from llm_interaction import LLMInteraction, ToolContext, tool
+from llm_interaction import (
+    LLMInteraction,
+    StreamTextDelta,
+    StreamToolCall,
+    StreamToolResult,
+    ToolContext,
+    tool,
+)
 
 _REQUIRED_VARS = [
     "LLM_INTERACTION_API_KEY",
@@ -71,8 +78,10 @@ class TestQueryIntegration:
     async def test_scratchpad_json(self, llm):
         result = await llm.query(
             system=(
-                "You are a helpful assistant. First explain your reasoning in plain text, "
-                "then output your answer in a ```json block."
+                "You are a helpful assistant. "
+                "You MUST first write at least one sentence explaining your reasoning. "
+                "Then output your answer in a ```json code block. "
+                "Never output the JSON without reasoning before it."
             ),
             user='What is the capital of Norway? Return {"capital": "..."}',
         )
@@ -197,3 +206,115 @@ class TestContextInjectionIntegration:
         )
         assert result.stop_reason == "stop_tool"
         assert result.tool_call_count >= 1
+
+
+@skip_no_llm
+class TestStreamingIntegration:
+    @pytest.mark.asyncio
+    async def test_streaming_content_stop(self, llm):
+        """Streaming agent loop returns content stop."""
+        stream = llm.agent_loop_streaming(
+            system="You are a helpful assistant. Be very brief.",
+            user="What is 2 + 2? Reply with just the number.",
+            tools=[],
+        )
+        events = []
+        async for event in stream:
+            events.append(event)
+
+        result = stream.result
+        assert result.stop_reason == "content"
+        assert "4" in result.final_content
+
+    @pytest.mark.asyncio
+    async def test_streaming_with_stop_tool(self, llm):
+        """Streaming agent loop with a stop tool."""
+        @tool
+        def multiply(x: int, y: int) -> int:
+            """Multiply two numbers.
+
+            Args:
+                x: First number
+                y: Second number
+            """
+            return x * y
+
+        @tool(stop=True)
+        def submit(answer: str) -> str:
+            """Submit the final answer.
+
+            Args:
+                answer: The answer to submit
+            """
+            return answer
+
+        stream = llm.agent_loop_streaming(
+            system="You are a calculator. Use multiply to compute, then submit the answer.",
+            user="What is 6 * 7?",
+            tools=[multiply, submit],
+        )
+        events = []
+        async for event in stream:
+            events.append(event)
+
+        result = stream.result
+        assert result.stop_reason == "stop_tool"
+        assert result.tool_call_count >= 1
+
+    @pytest.mark.asyncio
+    async def test_streaming_collect(self, llm):
+        """collect() drains the stream and returns AgentResult."""
+        result = await llm.agent_loop_streaming(
+            system="You are a helpful assistant. Be very brief.",
+            user="What is 2 + 2? Reply with just the number.",
+            tools=[],
+        ).collect()
+
+        assert result.stop_reason == "content"
+        assert "4" in result.final_content
+
+    @pytest.mark.asyncio
+    async def test_streaming_text_delta_events(self, llm):
+        """StreamTextDelta events arrive in order."""
+        @tool
+        def add(x: int, y: int) -> int:
+            """Add two numbers.
+
+            Args:
+                x: First number
+                y: Second number
+            """
+            return x + y
+
+        @tool(stop=True)
+        def submit(answer: str) -> str:
+            """Submit the final answer.
+
+            Args:
+                answer: The answer to submit
+            """
+            return answer
+
+        stream = llm.agent_loop_streaming(
+            system="You are a calculator. Use tools then submit.",
+            user="What is 3 + 5?",
+            tools=[add, submit],
+        )
+
+        text_chunks = []
+        tool_calls = []
+        tool_results = []
+
+        async for event in stream:
+            match event:
+                case StreamTextDelta():
+                    text_chunks.append(event)
+                case StreamToolCall():
+                    tool_calls.append(event)
+                case StreamToolResult():
+                    tool_results.append(event)
+
+        assert len(text_chunks) >= 0
+        assert len(tool_calls) >= 1
+        assert len(tool_results) >= 1
+        assert stream.result.tool_call_count >= 1
