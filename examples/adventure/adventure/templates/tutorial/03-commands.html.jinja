@@ -1,0 +1,42 @@
+{% extends "base.html.jinja" %}
+{% block content %}
+<p>Not everything needs an LLM. Looking around, checking your inventory or rolling
+dice should be <strong>instant, free and exact</strong>. Anything starting with
+<code>/</code> is a command handled by plain Python; everything else goes to the
+Dungeon Master.</p>
+
+<p>Here is the router at the top of <code>Game.handle</code>:</p>
+{{ snippet("game.py", "handle") }}
+
+<h2>A tiny command registry</h2>
+<p>A decorator collects commands into a dict. <code>/help</code> is generated from it.</p>
+{{ snippet("commands.py", "registry") }}
+
+<h2>/look reads the save, not the LLM</h2>
+<p>This matters more than it seems: <code>/look</code> renders the current place straight
+from the world data. If the Dungeon Master <em>said</em> there's a goblin here but
+<code>/look</code> doesn't show one, the model forgot to save it. Commands are your
+lie detector.</p>
+{{ snippet("commands.py", "render_look") }}
+
+<h2>/undo</h2>
+<p>Before every LLM turn the whole world is serialised to a string. Undo just
+restores the last one. Cheap, simple, and it lets players experiment without fear.</p>
+{{ snippet("game.py", "undo") }}
+
+<table>
+  <tr><th>Command</th><th>What it does</th></tr>
+  <tr><td><code>/look /inv /me /map</code></td><td>Read the world</td></tr>
+  <tr><td><code>/journal /facts</code></td><td>Read the history and lore</td></tr>
+  <tr><td><code>/roll 2d6+1</code></td><td>Roll dice yourself</td></tr>
+  <tr><td><code>/undo</code></td><td>Undo the last Dungeon Master turn</td></tr>
+  <tr><td><code>/new [premise] /worlds /load</code></td><td>Manage worlds</td></tr>
+  <tr><td><code>/debug</code></td><td>Show what the LLM did</td></tr>
+</table>
+
+<div class="box try">Type "I pick up the mug and smash it" (or similar), then <code>/look</code>,
+then <code>/undo</code>, then <code>/look</code> again.</div>
+
+<div class="box exercise">Add a <code>/beings</code> command that lists every character in
+the world and where they are.</div>
+{% endblock %}

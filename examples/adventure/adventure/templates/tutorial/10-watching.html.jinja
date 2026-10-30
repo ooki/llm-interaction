@@ -1,0 +1,35 @@
+{% extends "base.html.jinja" %}
+{% block content %}
+<p>An agent that silently calls fifteen tools is impossible to debug. The game shows you
+what happened at three levels.</p>
+
+<h2>1. World changes (for players)</h2>
+<p>Every mutating tool appends a human-readable line to <code>log.changes</code>, e.g.
+<code>"New being: Grik the Merchant"</code>. The reply sends them to the browser, which
+shows them under the narration and in the "World changes" panel.</p>
+
+<h2>2. The tool trace (for developers)</h2>
+<p><code>on_tool_call</code> is a callback the agent loop calls after every tool, with the
+arguments and the result &mdash; including errors:</p>
+{{ snippet("turn.py", "on_tool_call") }}
+<p>It's passed as <code>on_tool_call=on_tool_call</code> in <code>run_turn</code>. The game collects it, together
+with the rendered prompt and the raw API call, into the debug payload:</p>
+{{ snippet("game.py", "turn") }}
+
+<h2>3. The raw API call</h2>
+<div class="box lib"><code>llm.last_call</code> returns <code>{"request": ..., "response": ...}</code> for
+the most recent API call: the exact payload sent and the raw SDK response, including
+token usage. Invaluable when the model does something weird.</div>
+
+<h2>The debug drawer</h2>
+<p>The browser renders all of it. Note that everything goes through
+<code>textContent</code>, never <code>innerHTML</code> &mdash; model output is untrusted input.</p>
+{{ snippet("static/game.js", "debug") }}
+
+<div class="box try">Open the drawer with <code>/debug</code>, take a turn, and find:
+the prompt, each tool call with its arguments, and the token usage in
+<code>llm.last_call</code>.</div>
+
+<div class="box exercise">Add a running token counter to the header using
+<code>last_call.response.usage</code>.</div>
+{% endblock %}

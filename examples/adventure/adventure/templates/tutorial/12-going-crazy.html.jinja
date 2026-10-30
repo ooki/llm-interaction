@@ -1,0 +1,40 @@
+{% extends "base.html.jinja" %}
+{% block content %}
+<p>The game's promise is that the player can try <em>anything</em>. Three design choices
+make that work without the world falling apart.</p>
+
+<h2>1. "Yes, and..." instead of "you can't"</h2>
+<p>The rules tell the Dungeon Master never to refuse. An impossible action still gets a
+consequence: you try to eat the moon, you get a mouthful of moonlight and a lunar
+curse (saved with <code>set_player_status</code>). The game keeps moving.</p>
+
+<h2>2. Open-ended state</h2>
+<p>Nothing in the schema says what a player <em>can</em> be. <code>status</code> is a
+free dictionary:</p>
+{{ snippet("world.py", "models") }}
+<p>So "I become a sentient fog" is just <code>set_player_status("form", "a sentient fog")</code>,
+and every later prompt includes it. The model then has to deal with a fog trying to open
+doors &mdash; consistently, because it's in the context.</p>
+
+<h2>3. Consistency comes from the engine</h2>
+<ul>
+  <li>The model can say anything, but <strong>only tools change the world</strong>.</li>
+  <li>Tools validate: you can't move to a place that doesn't exist, can't put a bag inside
+      itself, can't move a place.</li>
+  <li>Saved facts are re-injected and the rules say never contradict them.</li>
+  <li>Dice are real, so outcomes aren't always convenient.</li>
+</ul>
+
+<h2>4. Undo makes it safe to experiment</h2>
+<p>Burn down the only tavern? Turn yourself into a teapot? <code>/undo</code>. Each LLM turn
+is checkpointed first, and failed turns roll back automatically:</p>
+{{ snippet("game.py", "turn") }}
+
+<div class="box try">Some favourites to try:
+"I convince the furniture to unionise", "I fold the room in half",
+"I swap bodies with the nearest animal", "I open a portal to wherever my mother is".
+After each, check <code>/me</code> and <code>/look</code>.</div>
+
+<div class="box exercise">Add a <code>/chaos 1-5</code> command that stores a chaos level
+on the world and injects it into the system prompt: 1 = gritty realism, 5 = fever dream.</div>
+{% endblock %}

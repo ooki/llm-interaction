@@ -1,0 +1,37 @@
+{% extends "base.html.jinja" %}
+{% block content %}
+<p>Every free-text turn starts with a blank slate. The model has no chat history; it
+only knows what we put in the prompt. So <em>building the context</em> is the most
+important design decision in the game.</p>
+
+<h2>World → variables</h2>
+{{ snippet("context.py", "build_turn_context") }}
+<p>The model gets: where you are, the exits, what's here (with ids and properties),
+who's here (with their mood and memories), what you carry, other known places, a few
+recent journal entries and the relevant facts.</p>
+
+<h2>Picking relevant facts</h2>
+<p>We can't send every fact ever recorded. We send the ones that match the action or
+the current place, plus the newest few:</p>
+{{ snippet("context.py", "relevant_facts") }}
+
+<h2>Variables → prompt</h2>
+<p>The user prompt template turns that into readable text. The <code>[ids]</code> in
+brackets are what the model must use when calling tools.</p>
+{{ snippet("prompts/turn_user.jinja") }}
+
+<h2>Static rules vs. dynamic state</h2>
+<p>The <em>system</em> prompt holds the rules (it never changes between turns). The
+<em>user</em> prompt holds the current state and the action. We'll read the rules on
+the "Invent, then save" page.</p>
+
+<div class="box lib"><code>llm.render("turn_user.jinja", variables)</code> renders a single
+template without calling the model. The game uses it to show you the exact prompt in the
+debug drawer.</div>
+
+<div class="box try">Open the debug drawer (<code>/debug</code>), take a turn, and expand
+"Prompt: user". Everything the model knows about your world is right there.</div>
+
+<div class="box exercise">The context grows with the number of places. Change
+<code>known_places</code> to only include places within two exits of the player.</div>
+{% endblock %}

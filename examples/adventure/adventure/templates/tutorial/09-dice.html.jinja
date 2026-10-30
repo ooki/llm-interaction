@@ -1,0 +1,36 @@
+{% extends "base.html.jinja" %}
+{% block content %}
+<p>D&amp;D lives on dice. But LLMs are terrible at randomness: they are trained to produce
+the <em>likely</em> next token, and they have a strong bias toward dramatic, convenient
+outcomes. Ask one to "roll a d20" and you'll see a lot of 17s.</p>
+
+<p>So we split the job:</p>
+<ul>
+  <li>The <strong>model</strong> decides <em>when</em> to roll, <em>what</em> dice, and what
+      counts as success.</li>
+  <li>The <strong>engine</strong> does the actual rolling with Python's <code>random</code>.</li>
+  <li>The model must narrate the result honestly.</li>
+</ul>
+
+<h2>The tool</h2>
+{{ snippet("tools.py", "roll_tool") }}
+<p>The <code>rng</code> lives in the <code>TurnLog</code>, so tests can pass a seeded
+<code>random.Random(42)</code> and get reproducible rolls.</p>
+
+<h2>The parser</h2>
+<p>Standard dice notation, including keep-highest (<code>4d6kh3</code>) and advantage /
+disadvantage (<code>2d20kh1</code> / <code>2d20kl1</code>):</p>
+{{ snippet("dice.py", "roll") }}
+
+<h2>Rolling without the LLM</h2>
+<p>The same parser powers a slash command:</p>
+{{ snippet("commands.py", "roll_command") }}
+
+<div class="box try">Try something risky ("I try to pickpocket the barkeep"). The world
+changes list shows the roll and the reason. Then <code>/undo</code> and try again &mdash;
+different roll, different story.</div>
+
+<div class="box exercise">Make a tool <code>random_table(options: list[str], reason: str)</code>
+that picks one option at random &mdash; useful for "what's in the chest?". Think about why
+the model shouldn't pick for itself.</div>
+{% endblock %}

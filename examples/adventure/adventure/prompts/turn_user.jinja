@@ -1,0 +1,47 @@
+# World: {{ world.name }} (turn {{ world.turn + 1 }})
+Premise: {{ world.premise }}
+{% if world.story_so_far %}
+Story so far: {{ world.story_so_far }}
+{% endif %}
+
+## The player
+{% if status %}{% for k, v in status.items() %}- {{ k }}: {{ v }}
+{% endfor %}{% else %}- (nothing notable yet)
+{% endif %}
+Carrying:
+{% for t in inventory %}- {{ t.name }} [{{ t.id }}]: {{ t.description }}{% if t.properties %} {{ t.properties }}{% endif %}{% if t.contains %} -- contains: {{ t.contains | join(", ") }}{% endif %}
+{% else %}- nothing
+{% endfor %}
+{% if followers %}Companions following the player:
+{% for b in followers %}- {{ b.name }} [{{ b.id }}] ({{ b.disposition }}): {{ b.description }}
+{% endfor %}{% endif %}
+
+## Current place: {{ here.name }} [{{ here.id }}]
+{{ here.description }}
+{% if here.properties %}Properties: {{ here.properties }}
+{% endif %}
+Exits:
+{% for e in exits %}- {{ e.label }} -> {{ e.name }} [{{ e.id }}]
+{% else %}- none known yet (you may invent some)
+{% endfor %}
+Things here:
+{% for t in things_here %}- {{ t.name }} [{{ t.id }}]: {{ t.description }}{% if t.properties %} {{ t.properties }}{% endif %}{% if t.contains %} -- contains: {{ t.contains | join(", ") }}{% endif %}
+{% else %}- nothing notable
+{% endfor %}
+Beings here:
+{% for b in beings_here %}- {{ b.name }} [{{ b.id }}] ({{ b.disposition }}): {{ b.description }} Personality: {{ b.personality }}{% if b.properties %} {{ b.properties }}{% endif %}{% if b.memory %} Remembers: {{ b.memory[-3:] | join(" / ") }}{% endif %}
+{% else %}- nobody
+{% endfor %}
+
+{% if known_places %}## Other known places
+{% for p in known_places %}- {{ p.name }} [{{ p.id }}]
+{% endfor %}{% endif %}
+{% if facts %}## Facts that are true in this world
+{% for f in facts %}- {{ f }}
+{% endfor %}{% endif %}
+{% if recent %}## Recent turns
+{% for j in recent %}- Turn {{ j.turn }}: player did "{{ j.action }}" -> {{ j.summary }}
+{% endfor %}{% endif %}
+
+# The player now does:
+{{ action }}

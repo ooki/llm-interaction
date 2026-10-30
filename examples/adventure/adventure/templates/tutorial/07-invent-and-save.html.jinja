@@ -1,0 +1,46 @@
+{% extends "base.html.jinja" %}
+{% block content %}
+<p>This is the heart of the game. The model is allowed &mdash; encouraged &mdash; to make
+things up. But anything it invents must go through a tool, or it never happened.</p>
+
+<h2>The rules</h2>
+<p>The system prompt spells it out:</p>
+{{ snippet("prompts/turn_system.jinja", "rules") }}
+
+<h2>Search first...</h2>
+<p>Inventing without looking leads to duplicates: a second "Old Wenna", a third rusty key.
+So the first tool the model usually calls is a search:</p>
+{{ snippet("tools.py", "search_world") }}
+
+<h2>...then create</h2>
+<p>Three creation tools cover almost everything a story needs. Places can be linked to
+the current place in the same call:</p>
+{{ snippet("tools.py", "create_place") }}
+
+<p>Characters get a personality, a disposition toward the player, and a memory list
+that <code>update_being</code> appends to:</p>
+{{ snippet("tools.py", "create_being") }}
+
+<p>And lore goes into <code>add_fact</code> &mdash; rumours, promises, rules of magic
+&mdash; so that later turns can't contradict them.</p>
+
+<h2>A typical turn</h2>
+<p>Player: <em>"I ask around for someone who can read the strange map."</em></p>
+<pre>
+1. search_world(query="map scholar reader")           → nothing found
+2. create_being(name="Brother Anselm", personality="...", location="here", ...)
+3. add_fact(text="Brother Anselm was expelled from the Archive for reading forbidden maps.")
+4. roll(dice_notation="1d20", reason="convince Anselm to help, DC 12")  → 15
+5. update_being(being_id="brother-anselm", disposition="intrigued", remember="...")
+6. narrate(text="A hooded monk at the corner table ...", summary="Met Brother Anselm.")
+</pre>
+<p>Next turn, Anselm is in the prompt's "Beings here" list with his mood and memory, and
+<code>/look</code> shows him too.</p>
+
+<div class="box try">Invent something big: "I declare myself queen of this tavern and
+demand tribute". Then check <code>/me</code>, <code>/facts</code> and the beings in
+<code>/look</code>.</div>
+
+<div class="box exercise">The model sometimes forgets to save. Find a case where it does
+(check <code>/look</code> after a turn) and improve the wording of the rules to fix it.</div>
+{% endblock %}

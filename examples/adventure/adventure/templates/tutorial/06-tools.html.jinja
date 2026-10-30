@@ -1,0 +1,51 @@
+{% extends "base.html.jinja" %}
+{% block content %}
+<p>A tool is a normal Python function the model may ask us to run. The
+<code>@tool</code> decorator turns the function's signature and docstring into the JSON
+schema the model sees.</p>
+
+{{ snippet("tools.py", "create_thing") }}
+
+<h2>What the model sees</h2>
+<ul>
+  <li><strong>Name:</strong> the function name, <code>create_thing</code>.</li>
+  <li><strong>Description:</strong> the first line of the docstring.</li>
+  <li><strong>Parameters:</strong> from the type hints &mdash; <code>str</code> &rarr; string,
+      <code>dict[str, str]</code> &rarr; object of strings, <code>list[str]</code> &rarr; array.</li>
+  <li><strong>Parameter descriptions:</strong> from the Google-style <code>Args:</code> section.
+      These are your best lever for steering the model: say what values mean, give examples.</li>
+</ul>
+
+<h2><code>ToolContext</code>: dependency injection</h2>
+<p>The model never sees <code>world</code> or <code>log</code>. Parameters typed
+<code>ToolContext[T]</code> are hidden from the schema and filled in at runtime by
+<em>type</em> from the <code>context=[...]</code> list we pass to the agent loop:</p>
+<pre><code>context=[world, log]   # World → ToolContext[World],  TurnLog → ToolContext[TurnLog]</code></pre>
+<p>That's how a tool gets the current world without globals. The second context,
+<code>TurnLog</code>, collects what happened during this turn:</p>
+{{ snippet("tools.py", "turnlog") }}
+
+<div class="box lib">Note the comment in <code>finish()</code>. A <code>ToolContext</code> is a thin
+proxy: reading attributes and calling methods reach the real object, but assigning an
+attribute on the proxy doesn't. Mutate through methods or mutable containers.</div>
+
+<h2>Errors are feedback</h2>
+<p>When a tool raises, the agent loop doesn't crash. It sends
+<code>{"error": "..."}</code> back to the model as the tool's result, and the model
+usually fixes its next call. So write errors <em>for the model</em>:</p>
+{{ snippet("tools.py", "move") }}
+<p>Compare <code>"Invalid destination"</code> with
+<code>"'the-moon' is not a place. Create it first with create_place."</code> &mdash;
+the second one tells the model exactly what to do next.</p>
+
+<h2>Overriding the description</h2>
+<p>Sometimes the docstring is for humans and the model should see something shorter:</p>
+{{ snippet("tools.py", "destroy") }}
+
+<div class="box try">Type "I walk to the moon". In the debug drawer, look for a failed
+<code>move_player</code> followed by a <code>create_place</code>.</div>
+
+<div class="box exercise">Write a <code>craft(ingredients: list[str], result_name: str, ...)</code>
+tool that destroys the ingredients and creates the result. Raise helpful errors if an
+ingredient isn't in the player's inventory.</div>
+{% endblock %}

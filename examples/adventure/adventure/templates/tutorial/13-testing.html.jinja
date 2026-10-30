@@ -1,0 +1,35 @@
+{% extends "base.html.jinja" %}
+{% block content %}
+<p>Tests that call a real LLM are slow, cost money and give different answers each run.
+Almost everything here can be tested without one.</p>
+
+<h2>Layer 1: pure Python</h2>
+<p>The world model, dice, commands and the tools themselves are ordinary functions. The
+tool tests call them directly, injecting <code>ToolContext</code> by hand. Run them with:</p>
+<pre><code>cd examples/adventure
+uv run --extra dev pytest</code></pre>
+
+<h2>Layer 2: a scripted fake LLM</h2>
+<p><code>LLMInteraction</code> accepts a pre-built client. We hand it a fake one that
+returns scripted tool calls, shaped exactly like Responses API output:</p>
+{{ snippet("../tests/conftest.py", "fake_client") }}
+
+<div class="box lib"><code>LLMInteraction(prompt_dir=..., client=my_client, model="...")</code>
+skips all authentication and wraps any OpenAI-compatible client. In tests, "compatible"
+just means "has <code>.responses.create()</code>".</div>
+
+<p>Now a whole turn runs through the <em>real</em> agent loop, the <em>real</em> tools and
+the <em>real</em> save file &mdash; only the model's decisions are scripted:</p>
+{{ snippet("../tests/test_turn.py", "test_invent_and_save") }}
+
+<h2>Layer 3: the tutorial itself</h2>
+<p>Snippets reference regions by name. If someone renames a marker or deletes a function,
+this test fails before a student ever sees a broken page:</p>
+{{ snippet("../tests/test_app_and_commands.py", "test_tutorial") }}
+<p>And this is how a snippet is extracted:</p>
+{{ snippet("tutorial.py", "extract") }}
+
+<div class="box exercise">Write a test where the model tries to <code>move</code> the
+satchel into itself, gets the error, and then fixes it. Assert that the second request
+contains the error message.</div>
+{% endblock %}

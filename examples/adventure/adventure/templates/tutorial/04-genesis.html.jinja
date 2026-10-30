@@ -1,0 +1,47 @@
+{% extends "base.html.jinja" %}
+{% block content %}
+<p><code>/new</code> creates a world. It uses two LLM calls and shows two different ways
+of getting structured data out of a model.</p>
+
+<h2>Templates</h2>
+<p><code>LLMInteraction</code> looks for prompt pairs in its <code>prompt_dir</code>:
+<code>NAME_system.jinja</code> and <code>NAME_user.jinja</code>.
+<code>query_template("premise", variables)</code> renders both and sends them.</p>
+{{ snippet("prompts/premise_system.jinja") }}
+{{ snippet("prompts/premise_user.jinja") }}
+
+<h2>Call 1: a premise, parsed with <code>.json()</code></h2>
+{{ snippet("genesis.py", "pick_premise") }}
+<p>Two things to notice:</p>
+<ul>
+  <li><strong>We supply the randomness.</strong> Ask an LLM for "a random premise" ten times
+      and you get ten haunted taverns. Feeding it three random words from <em>our</em>
+      list gives real variety.</li>
+  <li><code>response.json()</code> finds the <code>```json</code> block and parses it,
+      repairing small syntax slips (trailing commas, missing quotes) automatically.</li>
+</ul>
+
+<h2>Call 2: a whole starting world, validated with <code>.parse()</code></h2>
+<p>For something bigger we want guarantees. We describe the shape as Pydantic models:</p>
+{{ snippet("genesis.py", "seed_models") }}
+<p>...put the JSON schema in the prompt...</p>
+{{ snippet("prompts/genesis_system.jinja") }}
+<p>...and let <code>parse()</code> validate it:</p>
+{{ snippet("genesis.py", "create_seed") }}
+
+<div class="box lib"><code>await response.parse(Model, max_retries=2)</code> validates the
+answer. If validation fails it sends the error message back to the model ("field
+<code>start</code> is required...") and tries again. You get a valid object or an
+exception, never half-broken data.</div>
+
+<h2>From seed to world, deterministically</h2>
+<p>The LLM proposes; plain Python builds. Ids, exits in both directions and locations are
+all set by code, so they're always consistent:</p>
+{{ snippet("genesis.py", "build_world") }}
+
+<div class="box try"><code>/new a lighthouse keeper on a planet with three moons</code> &mdash;
+then open the debug drawer and look at the parsed <code>WorldSeed</code>.</div>
+
+<div class="box exercise">Add a <code>quest: str</code> field to <code>WorldSeed</code>
+and save it as a fact. You only need to touch <code>genesis.py</code>.</div>
+{% endblock %}

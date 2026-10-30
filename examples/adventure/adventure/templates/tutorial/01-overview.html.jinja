@@ -1,0 +1,64 @@
+{% extends "base.html.jinja" %}
+{% block content %}
+<p>You type <em>anything</em>: "I search the tavern for a goblin merchant",
+"I challenge the moon to a staring contest", "I turn into a swarm of bees".
+An LLM acting as Dungeon Master decides what happens, invents whatever the story
+needs, <strong>saves it to the world</strong>, and tells you the result.</p>
+
+<h2>The one big idea</h2>
+<p>LLMs have no memory between calls. If the Dungeon Master invents a cursed coin
+and only <em>mentions</em> it, the coin is gone next turn. So in this game:</p>
+<ul>
+  <li>The <strong>world</strong> (a Pydantic model saved as JSON) is the single source of truth.</li>
+  <li>The LLM can only change the world by calling <strong>tools</strong>
+      (<code>create_thing</code>, <code>move_player</code>, <code>roll</code>, ...).</li>
+  <li>Every turn, the prompt is rebuilt from the saved world. No chat history.</li>
+</ul>
+
+<h2>Architecture</h2>
+<pre>
+ Browser (index.html + game.js)
+     │  POST /api/command {"text": "..."}
+     ▼
+ FastAPI (app.py) ──► Game.handle (game.py)
+                        ├── "/look", "/inv", ...  ──► commands.py   (no LLM)
+                        └── anything else ──────────► turn.py
+                                                       ├── context.py   world → prompt variables
+                                                       ├── prompts/turn_*.jinja
+                                                       ├── llm.agent_loop_template(...)
+                                                       │      └── tools.py  ──► world.py (mutations)
+                                                       └── journal entry, save to saves/*.json
+</pre>
+
+<table>
+  <tr><th>File</th><th>Role</th></tr>
+  <tr><td><code>world.py</code></td><td>Data model, search, saving/loading</td></tr>
+  <tr><td><code>commands.py</code></td><td>Slash commands &mdash; instant, no LLM</td></tr>
+  <tr><td><code>genesis.py</code></td><td>Creating a new world from a premise</td></tr>
+  <tr><td><code>context.py</code></td><td>What the model sees each turn</td></tr>
+  <tr><td><code>tools.py</code></td><td>Everything the model can do to the world</td></tr>
+  <tr><td><code>turn.py</code></td><td>One turn: context &rarr; agent loop &rarr; journal</td></tr>
+  <tr><td><code>dice.py</code></td><td>Real randomness</td></tr>
+  <tr><td><code>chronicler.py</code></td><td>Long-term memory: condense the journal</td></tr>
+  <tr><td><code>game.py</code> / <code>app.py</code></td><td>Routing, undo, the web server</td></tr>
+</table>
+
+<h2>Running it</h2>
+<p>Create a <code>.env</code> file (in <code>examples/adventure/</code> or any parent folder):</p>
+<pre><code>LLM_INTERACTION_BACKEND=deepseek
+LLM_INTERACTION_API_KEY=sk-...your key...
+LLM_INTERACTION_MODEL=deepseek-flash</code></pre>
+<p>Then:</p>
+<pre><code>cd examples/adventure
+uv run adventure        # → http://127.0.0.1:8000</code></pre>
+
+<p>The game builds its <code>LLMInteraction</code> from those environment variables:</p>
+{{ snippet("app.py", "build_game") }}
+
+<div class="box lib">Because the backend comes from <code>LLM_INTERACTION_BACKEND</code>,
+the same game runs on Azure, OpenRouter, Databricks or a local llama-server just by
+editing <code>.env</code> &mdash; no code changes.</div>
+
+<div class="box try">Start the game, type <code>/new</code>, then <code>/help</code>.
+Open <code>saves/</code> in your editor and keep it open while you play.</div>
+{% endblock %}

@@ -1,0 +1,45 @@
+{% extends "base.html.jinja" %}
+{% block content %}
+<p>Most chatbots remember by resending the whole conversation. This game deliberately
+<strong>doesn't</strong>. Each turn is a fresh agent loop with no
+<code>previous_response_id</code>. Instead, memory lives in four places, all inside the
+saved world:</p>
+
+<table>
+  <tr><th>Memory</th><th>Where</th><th>Shown to the model</th></tr>
+  <tr><td>What exists right now</td><td>places, things, beings, player status</td><td>Current place, inventory, nearby beings</td></tr>
+  <tr><td>What happened recently</td><td><code>journal</code></td><td>Last 8 entries</td></tr>
+  <tr><td>What must stay true</td><td><code>facts</code></td><td>Relevant ones (keyword search)</td></tr>
+  <tr><td>The long story</td><td><code>story_so_far</code></td><td>Always</td></tr>
+  <tr><td>What NPCs think of you</td><td><code>Being.memory</code>, <code>disposition</code></td><td>For beings in the room</td></tr>
+</table>
+
+<h2>Why not chat history?</h2>
+<ul>
+  <li><strong>It grows forever.</strong> After 200 turns you'd be sending a novel every turn.</li>
+  <li><strong>It goes stale.</strong> Turn 3 says "the door is locked"; turn 40 the door was
+      burned down. History contains both; the world contains only the truth.</li>
+  <li><strong><code>/undo</code> becomes trivial.</strong> Restore the world, done. With chat
+      history you'd also have to rewind the conversation.</li>
+  <li><strong>It forces good persistence.</strong> If the model can only remember what it
+      saved, it learns (via the rules) to save.</li>
+</ul>
+
+<h2>The chronicler</h2>
+<p>The journal window only shows the last few turns. Every 10 turns a separate LLM call
+condenses the older journal into <code>story_so_far</code> and extracts lasting facts.
+It reasons in a scratchpad first, then answers with JSON:</p>
+{{ snippet("chronicler.py", "chronicle") }}
+{{ snippet("prompts/chronicle_system.jinja") }}
+
+<div class="box lib"><code>response.scratchpad_json()</code> returns
+<code>(scratchpad_text, data)</code>: everything before the last <code>```json</code> block,
+and that block parsed. Letting the model "think out loud" before answering often improves
+the answer, and the scratchpad is great for debugging.</div>
+
+<div class="box try">Play 10 turns, then check <code>/journal</code> (the "Story so far" line)
+and the "Chronicle" section in the debug drawer.</div>
+
+<div class="box exercise">NPCs only keep their last 10 memories. Make the chronicler also
+summarise each important NPC's memories into a single line.</div>
+{% endblock %}

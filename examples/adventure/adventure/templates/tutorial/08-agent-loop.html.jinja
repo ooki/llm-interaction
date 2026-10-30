@@ -1,0 +1,49 @@
+{% extends "base.html.jinja" %}
+{% block content %}
+<p>One LLM call can request several tool calls, but a turn often needs a <em>chain</em>:
+search, look at the result, create, roll, react to the roll, narrate. An
+<strong>agent loop</strong> repeats "call the model &rarr; run its tools &rarr; send the
+results back" until the model is done.</p>
+
+{{ snippet("turn.py", "run_turn") }}
+
+<h2>What <code>agent_loop_template</code> does</h2>
+<ol>
+  <li>Renders <code>turn_system.jinja</code> and <code>turn_user.jinja</code> with <code>variables</code>.</li>
+  <li>Sends them, along with the JSON schema of every tool in <code>WORLD_TOOLS</code>.</li>
+  <li>For each tool call in the answer: injects <code>ToolContext</code> params, runs the
+      function, and sends the result (or <code>{"error": ...}</code>) back.</li>
+  <li>Repeats until one of three things happens:</li>
+</ol>
+
+<table>
+  <tr><th><code>stop_reason</code></th><th>Meaning</th><th>How we handle it</th></tr>
+  <tr><td><code>"stop_tool"</code></td><td>A tool marked <code>stop=True</code> was called</td>
+      <td>The normal case: <code>narrate</code> stored the text in the <code>TurnLog</code></td></tr>
+  <tr><td><code>"content"</code></td><td>The model answered in plain text</td>
+      <td>Use <code>result.final_content</code> as narration</td></tr>
+  <tr><td><code>"max_calls"</code></td><td>Hit <code>max_tool_calls</code></td>
+      <td>Fallback narration; whatever was saved still stands</td></tr>
+</table>
+
+<h2>The stop tool</h2>
+{{ snippet("tools.py", "narrate") }}
+<p>Why a tool instead of just letting the model write text? Because we get
+<em>structured</em> output: the narration <em>and</em> a one-line journal summary, in
+separate fields, every time.</p>
+
+<h2>The tool list</h2>
+{{ snippet("tools.py", "tool_list") }}
+
+<div class="box lib"><code>agent_loop_template(name, variables, tools, context, max_tool_calls, on_tool_call)</code>
+is <code>agent_loop(system, user, ...)</code> with the prompt rendered from templates. Both return an
+<code>AgentResult</code> with <code>stop_reason</code>, <code>tool_call_count</code>,
+<code>final_content</code> and <code>response_id</code>.</div>
+
+<div class="box try">Do something complicated: "I climb onto the roof, tie a rope to the
+chimney and swing down into the alley behind the tavern". Count the tool calls in the
+debug drawer.</div>
+
+<div class="box exercise">Lower <code>MAX_TOOL_CALLS</code> to 3 and see how the game degrades.
+What would be a better fallback than the shimmer message?</div>
+{% endblock %}

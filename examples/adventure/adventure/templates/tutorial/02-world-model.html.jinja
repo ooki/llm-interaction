@@ -1,0 +1,47 @@
+{% extends "base.html.jinja" %}
+{% block content %}
+<p>Before any LLM shows up, we need somewhere to put what it invents. The whole
+world is a handful of Pydantic models:</p>
+
+{{ snippet("world.py", "models") }}
+
+<h2>Design choices worth noticing</h2>
+<ul>
+  <li><strong>Open-ended dictionaries.</strong> <code>properties</code> on everything
+      and <code>status</code> on the player are free-form <code>dict[str, str]</code>.
+      The model can record <code>{"on_fire": "yes"}</code> or
+      <code>{"form": "a sentient fog"}</code> without us ever predicting it. This is what
+      makes "go crazy" possible with a tiny schema.</li>
+  <li><strong>Location is a single field.</strong> A thing's <code>location</code> is the
+      player (<code>"player"</code>), a place, a being, or another thing. Contents are
+      <em>derived</em> by scanning, so there's no second list that can get out of sync.</li>
+  <li><strong>Readable ids.</strong> The LLM has to refer to things by id, and
+      <code>rusty-key</code> is much easier for it (and you) than a UUID:</li>
+</ul>
+
+{{ snippet("world.py", "unique_id") }}
+
+<h2>Friendly aliases</h2>
+<p>LLMs make small mistakes with ids. We accept <code>"here"</code> and
+<code>"player"</code>, and when an id is wrong we raise an error that tells the model
+<em>how to fix it</em>. You'll see why that matters on the tools page.</p>
+
+{{ snippet("world.py", "resolve_location") }}
+
+<h2>Search without embeddings</h2>
+<p>The model must search before inventing (to avoid five different "old wizards").
+A keyword score is plenty for a world of a few hundred entries:</p>
+
+{{ snippet("world.py", "search") }}
+
+<h2>Saving</h2>
+<p>One JSON file per world. Pydantic does all the work:</p>
+{{ snippet("world.py", "store") }}
+
+<div class="box try">Play a few turns, then open <code>saves/&lt;world&gt;.json</code>.
+Find the things the Dungeon Master invented.</div>
+
+<div class="box exercise">Add a <code>weight</code> field to <code>Thing</code>? Don't!
+Try asking the Dungeon Master to track weight via <code>properties</code> instead and
+see how far open-ended data gets you.</div>
+{% endblock %}

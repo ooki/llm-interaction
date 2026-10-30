@@ -1,0 +1,14 @@
+World: {{ world.name }}
+Premise: {{ world.premise }}
+
+Story so far (previous chronicle):
+{{ world.story_so_far or "(none yet)" }}
+
+Known facts:
+{% for f in known_facts %}- {{ f }}
+{% else %}- (none)
+{% endfor %}
+
+New journal entries since the last chronicle:
+{% for j in entries %}- Turn {{ j.turn }}: "{{ j.action }}" -> {{ j.summary }}{% if j.changes %} (changes: {{ j.changes | join("; ") }}){% endif %}
+{% endfor %}

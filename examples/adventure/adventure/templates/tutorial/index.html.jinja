@@ -1,0 +1,23 @@
+{% extends "base.html.jinja" %}
+{% block title %}Adventure tutorial{% endblock %}
+{% block body %}
+<h1>Building an "anything goes" text adventure with LLMs</h1>
+
+<p>This tutorial walks through a complete, working game: a single-player,
+Dungeons &amp; Dragons style text adventure where <em>you can try anything</em>,
+and a Large Language Model plays Dungeon Master. The twist is that the LLM
+invents the world as you go &mdash; places, items, characters, lore &mdash; and
+must <strong>save every invention</strong> through tools so the world stays
+consistent turn after turn.</p>
+
+<p>Every code snippet on these pages is read live from the game's source files,
+so what you read is exactly what runs.</p>
+
+<ol>
+  {% for s, t in pages %}
+  <li><a href="{{ link(s) }}">{{ t }}</a></li>
+  {% endfor %}
+</ol>
+
+<p>Start with <a href="{{ link(pages[0][0]) }}">{{ pages[0][1] }}</a>.</p>
+{% endblock %}

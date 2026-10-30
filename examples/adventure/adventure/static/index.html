@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Adventure</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <h1 id="title">Adventure</h1>
+    <span id="subtitle"></span>
+    <nav>
+      <a href="/tutorial" target="_blank">Tutorial</a>
+      <button type="button" id="debug-toggle">Debug</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="story">
+      <div id="log" aria-live="polite"></div>
+      <form id="prompt" autocomplete="off">
+        <input id="input" placeholder="Do anything... (or /help)" autofocus>
+        <button type="submit" id="send">Act</button>
+      </form>
+      <div id="quick">
+        <button type="button" data-cmd="/look">/look</button>
+        <button type="button" data-cmd="/inv">/inv</button>
+        <button type="button" data-cmd="/me">/me</button>
+        <button type="button" data-cmd="/map">/map</button>
+        <button type="button" data-cmd="/journal">/journal</button>
+        <button type="button" data-cmd="/roll 1d20">/roll</button>
+        <button type="button" data-cmd="/undo">/undo</button>
+        <button type="button" data-cmd="/help">/help</button>
+      </div>
+    </section>
+
+    <aside id="panels">
+      <details open><summary>Here</summary><pre id="panel-look"></pre></details>
+      <details open><summary>Inventory</summary><pre id="panel-inventory"></pre></details>
+      <details open><summary>You</summary><pre id="panel-me"></pre></details>
+      <details><summary>Map</summary><pre id="panel-map"></pre></details>
+      <details open><summary>World changes</summary><ul id="panel-changes"></ul></details>
+    </aside>
+  </main>
+
+  <section id="debug" hidden>
+    <h2>LLM debug</h2>
+    <div id="debug-body"><p class="muted">Take a turn to see what the LLM did.</p></div>
+  </section>
+
+  <script src="/static/game.js"></script>
+</body>
+</html>

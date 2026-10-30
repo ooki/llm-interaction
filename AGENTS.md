@@ -169,6 +169,15 @@ src/llm_interaction/
 └── client.py      # LLMInteraction, context matching, provider init, streaming agent loop
 ```
 
+## Examples
+
+`examples/adventure/` — a FastAPI text adventure (own `pyproject.toml`, path-depends on this repo) plus a
+14-page HTML tutorial at `/tutorial`. Tutorial code snippets are pulled from source regions marked
+`# --8<-- [start:name]` / `# --8<-- [end:name]`; don't rename or remove markers without updating
+`adventure/templates/tutorial/*.html.jinja` (a test catches broken references).
+- Run: `cd examples/adventure && uv run adventure`
+- Test: `cd examples/adventure && uv run --extra dev pytest`
+
 ## Verification
 
 - Unit tests: `uv run --extra dev pytest -m "not integration" --ignore=tests/test_integration_databricks.py`

@@ -1,0 +1,52 @@
+{% extends "base.html.jinja" %}
+{% block content %}
+<p>You now know every part of the game. Here are some ways to extend it, roughly from
+easiest to hardest. Each one exercises a different idea from the tutorial.</p>
+
+<h2>Warm-ups</h2>
+<ol>
+  <li><strong><code>/beings</code> command</strong> &mdash; list all characters and where they
+      are. <em>(commands, world data)</em></li>
+  <li><strong>Gold</strong> &mdash; nudge the rules so money is always tracked with
+      <code>set_player_status("gold", ...)</code>, and show it in the header.
+      <em>(prompting, open-ended state)</em></li>
+  <li><strong>Token counter</strong> &mdash; show total tokens used, from
+      <code>llm.last_call</code>. <em>(debugging)</em></li>
+</ol>
+
+<h2>New tools</h2>
+<ol start="4">
+  <li><strong><code>craft</code></strong> &mdash; combine inventory items into something new,
+      destroying the ingredients. <em>(validation, helpful errors)</em></li>
+  <li><strong><code>random_table</code></strong> &mdash; the engine picks from a list the model
+      supplies. <em>(randomness in the engine)</em></li>
+  <li><strong><code>schedule_event</code></strong> &mdash; "in 3 turns, the guards arrive". Store
+      it on the world and inject it into the prompt when it's due. <em>(memory, context)</em></li>
+</ol>
+
+<h2>Bigger projects</h2>
+<ol start="7">
+  <li><strong>NPCs that act on their own.</strong> After each turn, give every being in the
+      room a short <code>llm.query(..., tools=[...])</code> call with a limited tool set
+      (move, say, give). <em>(multiple agents, tool subsets)</em></li>
+  <li><strong>Combat.</strong> Track <code>hp</code> in properties, add an <code>attack</code>
+      tool that rolls and applies damage in code. Decide what the engine enforces and what
+      the model narrates. <em>(engine vs. model responsibilities)</em></li>
+  <li><strong>A drawn map.</strong> Render <code>places</code>/<code>exits</code> as an SVG graph
+      in the side panel. <em>(using the saved world)</em></li>
+  <li><strong>Smarter search.</strong> Replace keyword search with embeddings and compare
+      how often the model creates duplicates. <em>(retrieval)</em></li>
+</ol>
+
+<h2>Reflection questions</h2>
+<ul>
+  <li>Which bugs did you see that came from the <em>model</em>, and which from the <em>engine</em>?
+      How did you tell them apart?</li>
+  <li>What would break if the world were stored only in the chat history?</li>
+  <li>Which rules in <code>turn_system.jinja</code> had the biggest effect when you changed them?</li>
+</ul>
+
+<p>The snippet system works for your own changes too: wrap your code in
+<code># --8<-- [start:my-name]</code> / <code># --8<-- [end:my-name]</code> and embed it in a
+new page with <code>{% raw %}{{ snippet("tools.py", "my-name") }}{% endraw %}</code>.</p>
+{% endblock %}

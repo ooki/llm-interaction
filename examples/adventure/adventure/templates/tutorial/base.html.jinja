@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ number }}. {{ title }}{% endblock %} · Adventure tutorial</title>
+  <style>
+    :root { --bg:#fbf8f2; --ink:#2b2621; --muted:#7a6f61; --accent:#9a5b13; --code:#1d1a16; --codeink:#efe6d4; --line:#e4dccd; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--ink); font:17px/1.65 Georgia, "Iowan Old Style", serif; display:grid; grid-template-columns:270px 1fr; min-height:100vh; }
+    nav.toc { border-right:1px solid var(--line); padding:1.5rem 1rem; font-size:.9rem; position:sticky; top:0; height:100vh; overflow-y:auto; }
+    nav.toc h2 { font-size:1rem; margin:0 0 .8rem; }
+    nav.toc ol { padding-left:1.4rem; margin:0; }
+    nav.toc li { margin:.25rem 0; }
+    nav.toc a { color:var(--ink); text-decoration:none; }
+    nav.toc a.current { color:var(--accent); font-weight:bold; }
+    article { max-width:860px; padding:2rem 3rem 4rem; }
+    h1 { color:var(--accent); margin-top:0; line-height:1.25; }
+    h2 { margin-top:2.2rem; border-bottom:1px solid var(--line); padding-bottom:.2rem; }
+    a { color:var(--accent); }
+    code { font:.85em ui-monospace, Menlo, Consolas, monospace; background:#efe7d8; padding:.05em .3em; border-radius:3px; }
+    figure.snippet { margin:1.2rem 0; }
+    figure.snippet figcaption { font:.75rem ui-monospace, Menlo, Consolas, monospace; color:var(--muted); margin-bottom:.25rem; }
+    pre { background:var(--code); color:var(--codeink); padding:1rem 1.2rem; border-radius:6px; overflow-x:auto; font:.8rem/1.5 ui-monospace, Menlo, Consolas, monospace; }
+    pre code { background:none; padding:0; font-size:inherit; color:inherit; }
+    .box { border-left:4px solid var(--accent); background:#f3ecdf; padding:.7rem 1rem; margin:1.2rem 0; border-radius:0 6px 6px 0; }
+    .box.try::before { content:"Try it: "; font-weight:bold; }
+    .box.exercise::before { content:"Exercise: "; font-weight:bold; }
+    .box.lib::before { content:"llm-interaction: "; font-weight:bold; }
+    .pager { display:flex; justify-content:space-between; margin-top:3rem; border-top:1px solid var(--line); padding-top:1rem; }
+    table { border-collapse:collapse; margin:1rem 0; font-size:.9rem; }
+    th, td { border:1px solid var(--line); padding:.35rem .6rem; text-align:left; vertical-align:top; }
+    @media (max-width: 900px) { body { grid-template-columns:1fr; } nav.toc { position:static; height:auto; border-right:none; border-bottom:1px solid var(--line); } article { padding:1.5rem; } }
+  </style>
+</head>
+<body>
+  <nav class="toc">
+    <h2><a href="{{ link('index') }}">Adventure tutorial</a></h2>
+    <ol>
+      {% for s, t in pages %}
+      <li><a href="{{ link(s) }}"{% if s == slug|default('') %} class="current"{% endif %}>{{ t }}</a></li>
+      {% endfor %}
+    </ol>
+  </nav>
+  <article>
+    {% block body %}
+    <h1>{{ number }}. {{ title }}</h1>
+    {% block content %}{% endblock %}
+    <div class="pager">
+      <span>{% if prev %}<a href="{{ link(prev[0]) }}">&larr; {{ prev[1] }}</a>{% endif %}</span>
+      <span>{% if next %}<a href="{{ link(next[0]) }}">{{ next[1] }} &rarr;</a>{% endif %}</span>
+    </div>
+    {% endblock %}
+  </article>
+</body>
+</html>
