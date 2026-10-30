@@ -171,6 +171,11 @@ src/llm_interaction/
 
 ## Examples
 
+`examples/library/` — four minimal, sync scripts that build on each other (simple prompt → template
+prompt → tools → tools with `ToolContext`) around a shared book catalog.
+- Run: `uv run python examples/library/01_simple_prompt.py` (etc.) from the repo root
+- Test: `tests/test_examples_library.py` (part of the unit suite)
+
 `examples/adventure/` — a FastAPI text adventure (own `pyproject.toml`, path-depends on this repo) plus a
 14-page HTML tutorial at `/tutorial`. Tutorial code snippets are pulled from source regions marked
 `# --8<-- [start:name]` / `# --8<-- [end:name]`; don't rename or remove markers without updating
