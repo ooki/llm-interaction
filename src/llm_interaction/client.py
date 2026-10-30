@@ -17,9 +17,9 @@ from openai import AsyncOpenAI, OpenAI
 
 from llm_interaction.backend import (
     Backend,
-    ChatCompletionsBackend,
     LiteLLMBackend,
     ResponsesBackend,
+    StatelessResponsesBackend,
 )
 from llm_interaction.parsing import _extract_function_calls, _extract_text_from_output
 from llm_interaction.response import (
@@ -212,12 +212,12 @@ class LLMInteraction:
             model="databricks/databricks-claude-opus-4-8",
         )
 
-    **DeepSeek** (Chat Completions API)::
+    **DeepSeek** (stateless Responses API)::
 
         llm = LLMInteraction(
             prompt_dir=Path("prompts"),
             backend="deepseek",
-            model="deepseek-chat",
+            model="deepseek-flash",
         )
 
     **Local** (llama-server or any OpenAI-compat server)::
@@ -477,7 +477,11 @@ class LLMInteraction:
         )
 
     def _init_deepseek(self, api_key: str | None) -> None:
-        """Initialize the DeepSeek backend (Chat Completions API)."""
+        """Initialize the DeepSeek backend (stateless Responses API).
+
+        DeepSeek ignores ``previous_response_id``, so conversation history is
+        kept client-side and resent on every turn.
+        """
         resolved_key = api_key or os.getenv("LLM_INTERACTION_API_KEY")
         if not resolved_key:
             raise ValueError(
@@ -488,7 +492,7 @@ class LLMInteraction:
             api_key=resolved_key,
             base_url="https://api.deepseek.com",
         )
-        self._backend_impl = ChatCompletionsBackend(
+        self._backend_impl = StatelessResponsesBackend(
             client=self._client, model=self.model, max_retries=self._max_retries
         )
 

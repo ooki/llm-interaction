@@ -201,7 +201,7 @@ class TestChatCompletionsBackend:
         client.chat.completions = MagicMock()
         client.chat.completions.create = AsyncMock(return_value=mock_resp)
 
-        backend = ChatCompletionsBackend(client=client, model="deepseek-chat")
+        backend = ChatCompletionsBackend(client=client, model="deepseek-flash")
         result = await backend.call(
             [
                 {"role": "system", "content": "Be helpful"},
@@ -215,7 +215,7 @@ class TestChatCompletionsBackend:
 
         # Verify the Chat Completions API was called correctly
         call_kwargs = client.chat.completions.create.call_args[1]
-        assert call_kwargs["model"] == "deepseek-chat"
+        assert call_kwargs["model"] == "deepseek-flash"
         # messages list is mutated after the call (assistant msg appended),
         # so we check it contains the original messages plus the assistant
         messages = call_kwargs["messages"]
@@ -243,7 +243,7 @@ class TestChatCompletionsBackend:
             }
         ]
 
-        backend = ChatCompletionsBackend(client=client, model="deepseek-chat")
+        backend = ChatCompletionsBackend(client=client, model="deepseek-flash")
         result = await backend.call(
             [{"role": "user", "content": "add 1+2"}],
             tools=tools,
@@ -274,7 +274,7 @@ class TestChatCompletionsBackend:
         )
 
         tools = [{"type": "function", "name": "add", "description": "Add.", "parameters": {}}]
-        backend = ChatCompletionsBackend(client=client, model="deepseek-chat")
+        backend = ChatCompletionsBackend(client=client, model="deepseek-flash")
 
         # First call — initial messages
         result1 = await backend.call(

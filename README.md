@@ -384,10 +384,10 @@ Env vars are automatically forwarded to provider-specific vars (e.g. `DATABRICKS
 ```
 LLM_INTERACTION_BACKEND=deepseek
 LLM_INTERACTION_API_KEY=your-deepseek-key
-LLM_INTERACTION_MODEL=deepseek-chat
+LLM_INTERACTION_MODEL=deepseek-flash
 ```
 
-Uses the Chat Completions API (full message history is resent each turn).
+Uses DeepSeek's Responses API with `deepseek-flash`. The API is stateless, so the full conversation history is kept client-side and resent each turn.
 
 **Local** (`backend="local"`):
 

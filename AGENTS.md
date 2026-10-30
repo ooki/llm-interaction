@@ -23,7 +23,7 @@ llm = LLMInteraction(prompt_dir=Path("prompts"), backend="databricks")
 # LiteLLM (universal provider support — Claude on Databricks, Anthropic, etc.)
 llm = LLMInteraction(prompt_dir=Path("prompts"), backend="litellm")
 
-# DeepSeek (Chat Completions API)
+# DeepSeek (stateless Responses API)
 llm = LLMInteraction(prompt_dir=Path("prompts"), backend="deepseek")
 
 # Local (llama-server or any OpenAI-compat server)
@@ -39,7 +39,7 @@ Constructor reads env vars: `LLM_INTERACTION_API_KEY`, `LLM_INTERACTION_ENDPOINT
 
 **LiteLLM env vars:** `LLM_INTERACTION_API_KEY`, `LLM_INTERACTION_ENDPOINT`, `LLM_INTERACTION_MODEL`. The model must use litellm's `provider/model` format (e.g. `databricks/my-claude`, `anthropic/claude-sonnet-4-20250514`). The `LLM_INTERACTION_*` env vars are automatically forwarded to the provider-specific env vars that LiteLLM expects (e.g. `DATABRICKS_API_KEY`, `ANTHROPIC_API_KEY`).
 
-**DeepSeek env vars:** `LLM_INTERACTION_API_KEY`, `LLM_INTERACTION_MODEL`. Uses the Chat Completions API (resends full message history each turn).
+**DeepSeek env vars:** `LLM_INTERACTION_API_KEY`, `LLM_INTERACTION_MODEL` (`deepseek-flash`). Uses DeepSeek's Responses API via `StatelessResponsesBackend`: DeepSeek ignores `previous_response_id`, so full history (including reasoning/function_call items) is kept client-side and resent each turn. `ChatCompletionsBackend` is retained but currently unused.
 
 **Local env vars:** `LLM_INTERACTION_ENDPOINT` (defaults to `http://localhost:8080/v1`), `LLM_INTERACTION_MODEL`. No API key required. Uses the Responses API (`/v1/responses`) which llama-server supports natively.
 
@@ -161,10 +161,19 @@ Jinja2 templates in `prompt_dir`. Naming: `{name}_system.jinja` and `{name}_user
 ```
 src/llm_interaction/
 ├── __init__.py    # public re-exports
-├── backend.py     # Backend ABC, ResponsesBackend, ChatCompletionsBackend, LiteLLMBackend
+├── backend.py     # Backend ABC, ResponsesBackend, StatelessResponsesBackend, ChatCompletionsBackend, LiteLLMBackend
 ├── tool.py        # @tool, ToolDef, ToolContext
 ├── _schema.py     # type-to-JSON-Schema, docstring parsing
 ├── parsing.py     # JSON/YAML/scratchpad extraction
 ├── response.py    # LLMResponse, AgentResult, StreamAgentLoop, StreamEvent, etc.
 └── client.py      # LLMInteraction, context matching, provider init, streaming agent loop
 ```
+
+## Verification
+
+- Unit tests: `uv run --extra dev pytest -m "not integration" --ignore=tests/test_integration_databricks.py`
+  (the Databricks integration file errors without the `databricks` extra installed)
+- DeepSeek live check (needs network access to api.deepseek.com, blocked on the company network):
+  `uv run --extra dev pytest tests/test_integration_deepseek.py -v`
+- Lint: `uv run --extra dev ruff check src tests`
+- Types: `uv run --extra dev mypy src` (one pre-existing error: missing `types-PyYAML` stubs)

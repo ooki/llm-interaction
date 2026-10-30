@@ -1,8 +1,9 @@
 """Backend protocol and implementations for different LLM API protocols.
 
-Three concrete backends:
+Four concrete backends:
 - ResponsesBackend: OpenAI Responses API (azure, databricks, openrouter, local)
-- ChatCompletionsBackend: OpenAI Chat Completions API (deepseek)
+- StatelessResponsesBackend: Responses API with client-side history (deepseek)
+- ChatCompletionsBackend: OpenAI Chat Completions API (chat-only providers)
 - LiteLLMBackend: LiteLLM bridge (universal provider support)
 """
 
@@ -226,7 +227,83 @@ class ResponsesBackend(Backend):
 
 
 # ---------------------------------------------------------------------------
-# Chat Completions backend (deepseek, any OpenAI-compat chat-only provider)
+# Stateless Responses API backend (deepseek)
+# ---------------------------------------------------------------------------
+
+
+def _to_plain(value: Any) -> Any:
+    """Recursively convert SDK models / namespaces to plain JSON-able data."""
+    if hasattr(value, "model_dump"):
+        return value.model_dump(exclude_none=True)
+    if isinstance(value, SimpleNamespace):
+        value = vars(value)
+    if isinstance(value, dict):
+        return {k: _to_plain(v) for k, v in value.items() if v is not None}
+    if isinstance(value, (list, tuple)):
+        return [_to_plain(v) for v in value]
+    return value
+
+
+class StatelessResponsesBackend(ResponsesBackend):
+    """Responses API backend for providers without server-side state.
+
+    Such providers ignore ``previous_response_id``, so the full conversation
+    (prior inputs plus the model's output items, including reasoning and
+    function calls) is kept client-side and resent on every turn.
+    """
+
+    def __init__(
+        self,
+        client: AsyncOpenAI,
+        model: str,
+        max_retries: int = 3,
+        token_refresher: Callable[[], None] | None = None,
+    ):
+        super().__init__(client, model, max_retries, token_refresher)
+        self._history: dict[str, list[dict[str, Any]]] = {}
+
+    def _full_input(
+        self,
+        input_items: list[dict[str, Any]],
+        previous_response_id: str | None,
+    ) -> list[dict[str, Any]]:
+        prior = self._history.get(previous_response_id, []) if previous_response_id else []
+        return [*prior, *input_items]
+
+    def _record(
+        self, response_id: str, full_input: list[dict[str, Any]], output: list[Any]
+    ) -> None:
+        self._history[response_id] = [*full_input, *(_to_plain(o) for o in output)]
+
+    async def call(
+        self,
+        input_items: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        previous_response_id: str | None = None,
+    ) -> BackendResult:
+        full_input = self._full_input(input_items, previous_response_id)
+        result = await super().call(full_input, tools)
+        self._record(result.id, full_input, result.output)
+        return result
+
+    async def stream(
+        self,
+        input_items: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        previous_response_id: str | None = None,
+    ) -> AsyncIterator[_BackendStreamEvent]:
+        full_input = self._full_input(input_items, previous_response_id)
+        async for event in super().stream(full_input, tools):
+            if isinstance(event, _StreamResponseDone):
+                response = getattr(self._last_response, "response", None)
+                self._record(
+                    event.response_id, full_input, getattr(response, "output", None) or []
+                )
+            yield event
+
+
+# ---------------------------------------------------------------------------
+# Chat Completions backend (any OpenAI-compat chat-only provider)
 # ---------------------------------------------------------------------------
 
 

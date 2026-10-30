@@ -13,7 +13,7 @@ DeepSeek, and local (llama-server).
 | `parsing.py` | JSON/YAML parsing, fenced block extraction, scratchpad splitting, response output extraction |
 | `response.py` | `LLMResponse` (lazy parsing), `AgentResult` |
 | `client.py` | `LLMInteraction` class, context matching, provider initialization |
-| `backend.py` | `Backend` ABC, `BackendResult`, `ResponsesBackend`, `ChatCompletionsBackend`, `LiteLLMBackend` |
+| `backend.py` | `Backend` ABC, `BackendResult`, `ResponsesBackend`, `StatelessResponsesBackend`, `ChatCompletionsBackend`, `LiteLLMBackend` |
 | `__init__.py` | Public API re-exports |
 
 ### Backend Abstraction
@@ -34,8 +34,14 @@ Three concrete implementations:
 | Backend | API Protocol | Providers |
 |---------|-------------|-----------|
 | `ResponsesBackend` | `client.responses.create()` | Azure, Databricks, OpenRouter, local |
-| `ChatCompletionsBackend` | `client.chat.completions.create()` | DeepSeek |
+| `StatelessResponsesBackend` | `client.responses.create()` | DeepSeek |
+| `ChatCompletionsBackend` | `client.chat.completions.create()` | (unused; kept for chat-only providers) |
 | `LiteLLMBackend` | `litellm.aresponses()` | Universal (Anthropic, Databricks Claude, Vertex AI, etc.) |
+
+`StatelessResponsesBackend` is a `ResponsesBackend` for providers that ignore
+`previous_response_id`. It keeps full history client-side (prior inputs plus the
+model's output items, including `reasoning` and `function_call`) and resends it
+each turn; `previous_response_id` is never sent upstream.
 
 `ChatCompletionsBackend` manages full message history internally (no server-side
 state). It converts input items to chat messages, tools to chat format, and
@@ -63,7 +69,7 @@ method builds an `AsyncOpenAI` client and a backend instance:
 - `_init_databricks()` — `WorkspaceClient` (PAT, CLI OAuth, or notebook auth)
 - `_init_openrouter()` — API key, OpenRouter base URL
 - `_init_litellm()` — API key + optional endpoint, env-var forwarding
-- `_init_deepseek()` — API key, DeepSeek base URL
+- `_init_deepseek()` — API key, DeepSeek base URL, `StatelessResponsesBackend`
 - `_init_local()` — no auth, uses endpoint (defaults to `http://localhost:8080/v1`)
 - Pre-built client — wraps any existing `AsyncOpenAI` in a `ResponsesBackend`
 

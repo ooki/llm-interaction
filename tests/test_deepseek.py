@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from llm_interaction.backend import ChatCompletionsBackend
+from llm_interaction.backend import StatelessResponsesBackend
 
 
 class TestLLMInteractionDeepseekInit:
@@ -13,18 +13,18 @@ class TestLLMInteractionDeepseekInit:
         """DeepSeek backend initializes with api_key kwarg."""
         from llm_interaction import LLMInteraction
 
-        with patch.dict("os.environ", {"LLM_INTERACTION_MODEL": "deepseek-chat"}, clear=True):
+        with patch.dict("os.environ", {"LLM_INTERACTION_MODEL": "deepseek-flash"}, clear=True):
             with patch("llm_interaction.client.AsyncOpenAI") as mock_aoai:
                 llm = LLMInteraction(
                     prompt_dir=tmp_path,
                     backend="deepseek",
                     api_key="sk-ds-test-key",
-                    model="deepseek-chat",
+                    model="deepseek-flash",
                 )
 
-        assert llm.model == "deepseek-chat"
+        assert llm.model == "deepseek-flash"
         assert llm._backend == "deepseek"
-        assert isinstance(llm._backend_impl, ChatCompletionsBackend)
+        assert isinstance(llm._backend_impl, StatelessResponsesBackend)
         mock_aoai.assert_called_once_with(
             api_key="sk-ds-test-key",
             base_url="https://api.deepseek.com",
@@ -36,7 +36,7 @@ class TestLLMInteractionDeepseekInit:
 
         env = {
             "LLM_INTERACTION_API_KEY": "sk-ds-env-key",
-            "LLM_INTERACTION_MODEL": "deepseek-chat",
+            "LLM_INTERACTION_MODEL": "deepseek-flash",
         }
         with patch.dict("os.environ", env, clear=True):
             with patch("llm_interaction.client.AsyncOpenAI") as mock_aoai:
@@ -45,7 +45,7 @@ class TestLLMInteractionDeepseekInit:
                     backend="deepseek",
                 )
 
-        assert llm.model == "deepseek-chat"
+        assert llm.model == "deepseek-flash"
         mock_aoai.assert_called_once_with(
             api_key="sk-ds-env-key",
             base_url="https://api.deepseek.com",
@@ -55,7 +55,7 @@ class TestLLMInteractionDeepseekInit:
         """Missing API key raises ValueError with clear message."""
         from llm_interaction import LLMInteraction
 
-        with patch.dict("os.environ", {"LLM_INTERACTION_MODEL": "deepseek-chat"}, clear=True):
+        with patch.dict("os.environ", {"LLM_INTERACTION_MODEL": "deepseek-flash"}, clear=True):
             with pytest.raises(ValueError, match="API key required"):
                 LLMInteraction(
                     prompt_dir=tmp_path,
@@ -69,48 +69,48 @@ class TestLLMInteractionDeepseekInit:
         env = {
             "LLM_INTERACTION_BACKEND": "deepseek",
             "LLM_INTERACTION_API_KEY": "sk-ds-key",
-            "LLM_INTERACTION_MODEL": "deepseek-chat",
+            "LLM_INTERACTION_MODEL": "deepseek-flash",
         }
         with patch.dict("os.environ", env, clear=True):
             with patch("llm_interaction.client.AsyncOpenAI"):
                 llm = LLMInteraction(prompt_dir=tmp_path)
 
         assert llm._backend == "deepseek"
-        assert isinstance(llm._backend_impl, ChatCompletionsBackend)
+        assert isinstance(llm._backend_impl, StatelessResponsesBackend)
 
 
 class TestDeepseekQuery:
     @pytest.mark.asyncio
-    async def test_query_uses_chat_completions(self, tmp_path):
-        """Query through DeepSeek backend uses Chat Completions API."""
+    async def test_query_uses_responses_api(self, tmp_path):
+        """Query through DeepSeek backend uses the Responses API without server state."""
         from llm_interaction import LLMInteraction
 
         env = {
             "LLM_INTERACTION_API_KEY": "sk-ds-key",
-            "LLM_INTERACTION_MODEL": "deepseek-chat",
+            "LLM_INTERACTION_MODEL": "deepseek-flash",
         }
         with patch.dict("os.environ", env, clear=True):
             llm = LLMInteraction(prompt_dir=tmp_path, backend="deepseek")
 
-        # Mock the client's chat completions
-        mock_response = MagicMock()
-        mock_response.id = "resp-ds"
-        mock_response.choices = [
-            SimpleNamespace(
-                message=SimpleNamespace(content="Hello from DeepSeek!", tool_calls=None)
-            )
-        ]
+        mock_response = SimpleNamespace(
+            id="resp-ds",
+            output=[
+                SimpleNamespace(
+                    type="message",
+                    role="assistant",
+                    content=[SimpleNamespace(type="output_text", text="Hello from DeepSeek!")],
+                )
+            ],
+        )
         llm._client = MagicMock()
-        llm._client.chat = MagicMock()
-        llm._client.chat.completions = MagicMock()
-        llm._client.chat.completions.create = AsyncMock(return_value=mock_response)
+        llm._client.responses.create = AsyncMock(return_value=mock_response)
 
         result = await llm.query(system="Be helpful", user="Hi")
 
         assert result.text == "Hello from DeepSeek!"
-        llm._client.chat.completions.create.assert_called_once()
+        llm._client.responses.create.assert_called_once()
 
-        # Verify it used Chat Completions format (messages, not input)
-        call_kwargs = llm._client.chat.completions.create.call_args[1]
-        assert "messages" in call_kwargs
-        assert "input" not in call_kwargs
+        call_kwargs = llm._client.responses.create.call_args[1]
+        assert "input" in call_kwargs
+        assert "messages" not in call_kwargs
+        assert "previous_response_id" not in call_kwargs

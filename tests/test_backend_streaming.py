@@ -258,7 +258,7 @@ class TestChatCompletionsBackendStream:
         client = MagicMock()
         client.chat.completions.create = AsyncMock(return_value=_mock_create())
 
-        backend = ChatCompletionsBackend(client=client, model="deepseek-chat")
+        backend = ChatCompletionsBackend(client=client, model="deepseek-flash")
         events = [e async for e in backend.stream(
             input_items=[{"role": "user", "content": "Hi"}],
         )]
@@ -290,7 +290,7 @@ class TestChatCompletionsBackendStream:
         client = MagicMock()
         client.chat.completions.create = AsyncMock(return_value=_mock_create())
 
-        backend = ChatCompletionsBackend(client=client, model="deepseek-chat")
+        backend = ChatCompletionsBackend(client=client, model="deepseek-flash")
         events = [e async for e in backend.stream(
             input_items=[{"role": "user", "content": "Hi"}],
         )]
@@ -321,7 +321,7 @@ class TestChatCompletionsBackendStream:
         client = MagicMock()
         client.chat.completions.create = AsyncMock(return_value=_mock_create())
 
-        backend = ChatCompletionsBackend(client=client, model="deepseek-chat")
+        backend = ChatCompletionsBackend(client=client, model="deepseek-flash")
         events = [e async for e in backend.stream(
             input_items=[{"role": "user", "content": "Hi"}],
         )]
@@ -343,7 +343,7 @@ class TestChatCompletionsBackendStream:
         client = MagicMock()
         client.chat.completions.create = AsyncMock(return_value=_mock_create())
 
-        backend = ChatCompletionsBackend(client=client, model="deepseek-chat")
+        backend = ChatCompletionsBackend(client=client, model="deepseek-flash")
         _ = [e async for e in backend.stream(
             input_items=[{"role": "user", "content": "Hi"}],
             tools=[{"type": "function", "name": "test", "parameters": {}}],
@@ -379,7 +379,7 @@ class TestChatCompletionsBackendStream:
         client = MagicMock()
         client.chat.completions.create = AsyncMock(side_effect=lambda **kw: _mock_create(**kw))
 
-        backend = ChatCompletionsBackend(client=client, model="deepseek-chat")
+        backend = ChatCompletionsBackend(client=client, model="deepseek-flash")
 
         # Turn 1: tool call
         events1 = [e async for e in backend.stream(
@@ -423,7 +423,7 @@ class TestChatCompletionsBackendStream:
         client = MagicMock()
         client.chat.completions.create = AsyncMock(return_value=_mock_create())
 
-        backend = ChatCompletionsBackend(client=client, model="deepseek-chat")
+        backend = ChatCompletionsBackend(client=client, model="deepseek-flash")
         events = [e async for e in backend.stream(
             input_items=[{"role": "user", "content": "Hi"}],
         )]
@@ -443,7 +443,7 @@ class TestChatCompletionsBackendStream:
         client = MagicMock()
         client.chat.completions.create = AsyncMock(return_value=_mock_create())
 
-        backend = ChatCompletionsBackend(client=client, model="deepseek-chat")
+        backend = ChatCompletionsBackend(client=client, model="deepseek-flash")
         events = [e async for e in backend.stream(
             input_items=[{"role": "user", "content": "Hi"}],
         )]
